@@ -1,0 +1,16 @@
+[package]
+name = "myexpl"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+cfgrammar = "0.12"
+lrlex = "0.12"
+lrpar = "0.12"
+
+[dependencies]
+cfgrammar = "0.12"
+lrlex = "0.12"
+lrpar = "0.12"
