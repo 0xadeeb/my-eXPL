@@ -52,7 +52,7 @@ fn main() {
     }
     file_name.set_extension("xsm");
     match res {
-        Some(Ok(root)) => match generate_code(root, &lexer, &file_name) {
+        Some(Ok(root)) => match generate_code(&root, &lexer, &file_name) {
             Ok(_) => println!("Comipled successfully"),
             Err(e) => eprintln!("{e}"),
         },

@@ -1,10 +1,17 @@
 %%
-[0-9]+ "NUM"
+begin "BEGIN"
+end "END"
+read "READ"
+write "WRITE"
 \+ "ADD"
 \- "SUB"
 \* "MULT"
 / "DIV"
+= "EQ"
 \( "("
 \) ")"
+; ";"
+[a-z] "VAR"
+[0-9]+ "NUM"
 [\t\n\r ]+ ;
 . "UNMATCHED"
