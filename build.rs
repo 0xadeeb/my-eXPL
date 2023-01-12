@@ -10,5 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .lexer_in_src_dir("lexer.l")?
         .build()?;
+
+    CTLexerBuilder::new()
+        .lexer_in_src_dir("linker.l")?
+        .build()?;
+
     Ok(())
 }

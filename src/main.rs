@@ -1,5 +1,5 @@
 use lrlex::lrlex_mod;
-use lrpar::lrpar_mod;
+use lrpar::{lrpar_mod, NonStreamingLexer};
 use myexpl::*;
 use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 
@@ -7,7 +7,9 @@ use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 // module name will be `lexer_l` (i.e. the file name, minus any extensions,
 // with a suffix of `_l`).
 lrlex_mod!("lexer.l");
+lrlex_mod!("linker.l");
 // Using `lrpar_mod!` brings the parser for `calc.y` into scope. By default the
+//
 // module name will be `parser_y` (i.e. the file name, minus any extensions,
 // with a suffix of `_y`).
 lrpar_mod!("parser.y");
@@ -19,7 +21,7 @@ fn get_input(path: &PathBuf) -> Result<String, Box<dyn Error>> {
     Ok(s)
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut file_name = match env::args().nth(1) {
         Some(arg) => PathBuf::from(arg),
         None => PathBuf::from("./test_progs/prg.expl".to_owned()),
@@ -27,17 +29,11 @@ fn main() {
     match file_name.extension().and_then(OsStr::to_str) {
         Some("expl") => {}
         _ => {
-            eprintln!("expl file wasn\'t provided!");
+            eprintln!("Expl file wasn\'t provided!");
             std::process::exit(1);
         }
     }
-    let input = match get_input(&file_name) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
-    };
+    let input = get_input(&file_name)?;
 
     let lexerdef = lexer_l::lexerdef();
     let lexer = lexerdef.lexer(&input);
@@ -50,12 +46,35 @@ fn main() {
         eprintln!("Unable to evaluate expression!");
         std::process::exit(1);
     }
-    file_name.set_extension("xsm");
+    file_name.set_extension("obj");
     match res {
         Some(Ok(root)) => match generate_code(&root, &lexer, &file_name) {
-            Ok(_) => println!("Comipled successfully"),
-            Err(e) => eprintln!("{e}"),
+            Ok(_) => {
+                let input = get_input(&file_name)?;
+                let linker_def = linker_l::lexerdef();
+                let linker_lex = linker_def.lexer(&input);
+                file_name.set_extension("xsm");
+                match translate_label(&linker_lex, &linker_def, &file_name) {
+                    Ok(_) => println!("Comipled successfully"),
+                    e @ Err(_) => return e,
+                }
+            }
+            e @ Err(_) => return e,
         },
-        _ => eprintln!("Error in code generation phase"),
+        Some(Err((s, msg))) => match s {
+            Some(span) => {
+                let ((line, col), _) = lexer.line_col(span);
+                eprintln!(
+                    "Evaluation error at line {} column {}\n'{}'\n{}.",
+                    line,
+                    col,
+                    lexer.span_str(span),
+                    msg
+                )
+            }
+            None => eprint!("{msg},\nEvaluation error!"),
+        },
+        None => eprintln!("Error Parsing"),
     }
+    Ok(())
 }

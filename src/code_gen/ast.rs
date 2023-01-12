@@ -1,19 +1,28 @@
 use lrpar::Span;
+use std::error::Error;
 
 #[derive(Debug)]
 pub enum Tnode {
     Constant {
         span: Span,
+        ttype: Type,
     },
     Operator {
         op: Op,
         span: Span,
-        left: Box<Tnode>,
-        right: Box<Tnode>,
+        ttype: Type,
+        lhs: Box<Tnode>,
+        rhs: Box<Tnode>,
     },
     Var {
         span: Span,
+        ttype: Type,
         name: String,
+    },
+    Asgn {
+        span: Span,
+        lhs: Box<Tnode>,
+        rhs: Box<Tnode>,
     },
     Read {
         span: Span,
@@ -28,7 +37,20 @@ pub enum Tnode {
         left: Box<Tnode>,
         right: Box<Tnode>,
     },
-    Empty,
+    If {
+        span: Span,
+        condition: Box<Tnode>,
+        if_stmt: Box<Tnode>,
+        else_stmt: Option<Box<Tnode>>,
+    },
+    While {
+        span: Span,
+        condition: Box<Tnode>,
+        stmts: Box<Tnode>,
+    },
+    Empty {
+        span: Span,
+    },
 }
 
 #[derive(Debug)]
@@ -37,14 +59,48 @@ pub enum Op {
     Sub,
     Mult,
     Div,
-    Eq,
+    Mod,
+    EQ,
+    NE,
+    GT,
+    GE,
+    LT,
+    LE,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Type {
+    Void,
+    Int,
+    Bool,
+    String,
 }
 
 impl Tnode {
-    pub fn get_address(&self) -> Result<u32, ()> {
+    pub fn get_address(&self) -> Result<u32, Box<dyn Error>> {
         match self {
-            Tnode::Var { span: _, ref name } => Ok(name.as_bytes()[0] as u32 + 4096 - 97),
-            _ => Err(()),
+            Tnode::Var { name, .. } => Ok(name.as_bytes()[0] as u32 + 4096 - 97),
+            _ => Err(Box::<dyn Error>::from(
+                "LHS of assign statment not variable",
+            )),
+        }
+    }
+
+    pub fn get_type(&self) -> Type {
+        match self {
+            Tnode::Var { ttype, .. }
+            | Tnode::Operator { ttype, .. }
+            | Tnode::Constant { ttype, .. } => ttype.clone(),
+            _ => Type::Void,
+        }
+    }
+
+    pub fn get_span(&self) -> Option<Span> {
+        match self {
+            Tnode::Var { span, .. }
+            | Tnode::Operator { span, .. }
+            | Tnode::Constant { span, .. } => Some(span.clone()),
+            _ => None,
         }
     }
 }

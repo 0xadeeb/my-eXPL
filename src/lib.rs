@@ -1,5 +1,7 @@
 mod code_gen;
-mod general;
+mod linker;
+mod utils;
 
 pub use crate::code_gen::*;
-pub use crate::general::*;
+pub use crate::linker::*;
+pub use crate::utils::*;

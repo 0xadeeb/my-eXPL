@@ -1,0 +1,10 @@
+begin
+    read(n);
+    i = 1;
+    while(i <= n / 2) do
+        if (n % i == 0) then
+            write(i);
+        endif;
+        i = i + 1;
+    endwhile;
+end
