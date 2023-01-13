@@ -227,6 +227,7 @@ name = "myexpl"
 version = "0.1.0"
 dependencies = [
  "cfgrammar",
+ "lazy_static",
  "lrlex",
  "lrpar",
 ]

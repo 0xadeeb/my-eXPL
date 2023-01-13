@@ -22,18 +22,18 @@ fn get_input(path: &PathBuf) -> Result<String, Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut file_name = match env::args().nth(1) {
+    let input_file = match env::args().nth(1) {
         Some(arg) => PathBuf::from(arg),
         None => PathBuf::from("./test_progs/prg.expl".to_owned()),
     };
-    match file_name.extension().and_then(OsStr::to_str) {
+    match input_file.extension().and_then(OsStr::to_str) {
         Some("expl") => {}
         _ => {
             eprintln!("Expl file wasn\'t provided!");
             std::process::exit(1);
         }
     }
-    let input = get_input(&file_name)?;
+    let input = get_input(&input_file)?;
 
     let lexerdef = lexer_l::lexerdef();
     let lexer = lexerdef.lexer(&input);
@@ -46,15 +46,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("Unable to evaluate expression!");
         std::process::exit(1);
     }
-    file_name.set_extension("obj");
+    let obj_file = input_file.with_extension("obj");
     match res {
-        Some(Ok(root)) => match generate_code(&root, &lexer, &file_name) {
+        Some(Ok(root)) => match generate_code(&root, &obj_file) {
             Ok(_) => {
-                let input = get_input(&file_name)?;
+                let output_file = input_file.with_extension("xsm");
+                let input = get_input(&obj_file)?;
                 let linker_def = linker_l::lexerdef();
                 let linker_lex = linker_def.lexer(&input);
-                file_name.set_extension("xsm");
-                match translate_label(&linker_lex, &linker_def, &file_name) {
+                match translate_label(&linker_lex, &linker_def, &output_file) {
                     Ok(_) => println!("Comipled successfully"),
                     e @ Err(_) => return e,
                 }

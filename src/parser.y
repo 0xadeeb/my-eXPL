@@ -25,6 +25,10 @@
 %epp DO       "do"
 %epp WHILE    "while"
 %epp ENDWHILE "endwhile"
+%epp REPEAT   "repeat"
+%epp UNTIL    "until"
+%epp CONTINUE "continue"
+%epp BREAK    "break"
 
 %token "("
 %token ")"
@@ -36,7 +40,7 @@
 %%
 Program -> Result<Tnode,(Option<Span>, &'static str)>:
       "BEGIN" Slist "END" { $2 }
-    | "BEGIN" "END"       { Ok(Tnode::Empty{span: $span}) }
+    | "BEGIN" "END"       { Ok(Tnode::Empty) }
     ;
 
 Slist -> Result<Tnode,(Option<Span>, &'static str)>:
@@ -48,8 +52,11 @@ Stmt -> Result<Tnode,(Option<Span>, &'static str)>:
       InputStmt     { $1 }
     | OutputStmt    { $1 }
     | AsgStmt       { $1 }
+    | BreakStmt     { $1 }
+    | ContinueStmt  { $1 }
     | IfStmt        { $1 }
     | WhileStmt     { $1 }
+    | RepeatStmt    { $1 }
     ;
 
 IfStmt -> Result<Tnode,(Option<Span>, &'static str)>:
@@ -61,12 +68,24 @@ WhileStmt -> Result<Tnode,(Option<Span>, &'static str)>:
       "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";" { create_while_node($span, $3?, $6?) }
     ;
 
+RepeatStmt -> Result<Tnode,(Option<Span>, &'static str)>:
+      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { create_repeat_node($span, $3?, $6?) }
+    ;
+
 InputStmt -> Result<Tnode,(Option<Span>, &'static str)>:
       "READ" "(" V ")" ";"    { Ok(Tnode::Read{span: $span, var: Box::new($3?), }) }
     ;
 
 OutputStmt -> Result<Tnode,(Option<Span>, &'static str)>:
       "WRITE" "(" E ")" ";"   { create_write_node($span, $3?) }
+    ;
+
+BreakStmt -> Result<Tnode,(Option<Span>, &'static str)>:
+      "BREAK" ";"     { Ok(Tnode::Break) }
+    ;
+
+ContinueStmt -> Result<Tnode,(Option<Span>, &'static str)>:
+      "CONTINUE" ";"   { Ok(Tnode::Continue) }
     ;
 
 AsgStmt -> Result<Tnode,(Option<Span>, &'static str)>:
@@ -86,7 +105,7 @@ E -> Result<Tnode,(Option<Span>, &'static str)>:
     | E "LE" E      { create_bool_node(Op::LE, $span, $1?, $3?) }
     | E "LT" E      { create_bool_node(Op::LT, $span, $1?, $3?) }
     | "(" E ")"     { $2 }
-    | "NUM"         { Ok(Tnode::Constant{span: $span, ttype: Type::Int}) }
+    | "NUM"         { create_constant_node($lexer, $1.as_ref().unwrap()) }
     | V             { $1 }
     ;
 

@@ -1,0 +1,55 @@
+begin
+    w = 20;
+    x = 20;
+    y = 20;
+    z = 20;
+    i = 0;
+    j = 0;
+    k = 0;
+    l = 0;
+    while (i < w) do
+        if (i % 4 != 0) then
+            i = i + 1;
+            continue;
+        endif;
+        if ( i == w / 2) then
+            break;
+        endif;
+        write(i);
+
+        repeat do
+            if (j % 4 != 1) then
+                j = j + 1;
+                continue;
+            endif;
+            if ( j == x / 2) then
+                break;
+            endif;
+            write(j);
+
+            while(k < y) do
+                if(k % 4 != 2) then
+                    k = k + 1;
+                    continue;
+                endif;
+                write(k);
+
+                repeat do
+                    if(l % 4 != 3) then
+                        l = l + 1;
+                        continue;
+                    endif;
+                    write(l);
+
+                    l = l + 1;
+                until (z <= l);
+
+                k = k + 1;
+            endwhile;
+
+            j = j + 1;
+        until(x <= j);
+
+    i = i + 1;
+    endwhile;
+end

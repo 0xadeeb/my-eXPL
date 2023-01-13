@@ -1,47 +1,44 @@
 use super::ast::*;
-use crate::utils::{err_from_str, Label, RegisterPool};
-use lrlex::DefaultLexeme;
-use lrpar::NonStreamingLexer;
+use crate::utils::{err_from_str, Label, LoopStack, RegisterPool};
+use lazy_static::lazy_static;
 use std::{
     error::Error,
     fs::{File, OpenOptions},
     io::Write,
     path::PathBuf,
+    sync::Mutex,
 };
 
-fn pre_call(fd: &mut File, registers: &mut RegisterPool) {
-    for reg in registers.accquired_regs() {
+lazy_static! {
+    static ref REGISTERS: Mutex<RegisterPool> = Mutex::new(RegisterPool::default());
+    static ref LABELS: Mutex<Label> = Mutex::new(Label::default());
+    static ref LP: Mutex<LoopStack> = Mutex::new(LoopStack::default());
+}
+
+fn pre_call(fd: &mut File) {
+    for reg in REGISTERS.lock().unwrap().accquired_regs() {
         write!(fd, "PUSH R{}\n", reg).unwrap();
     }
 }
 
-fn post_call(fd: &mut File, registers: &mut RegisterPool) {
-    for reg in registers.accquired_regs().rev() {
+fn post_call(fd: &mut File) {
+    for reg in REGISTERS.lock().unwrap().accquired_regs().rev() {
         write!(fd, "POP R{}\n", reg).unwrap();
     }
 }
 
-fn evaluator(
-    node: &Tnode,
-    lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-    fd: &mut File,
-    registers: &mut RegisterPool,
-    labels: &mut Label,
-) -> Result<Option<u8>, Box<dyn Error>> {
+fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
     match node {
-        Tnode::Constant { span, .. } => match lexer.span_str(*span).parse::<u32>() {
-            Ok(val) => {
-                let reg1 = match registers.get_reg() {
-                    Some(r) => r,
-                    None => return Err(err_from_str("No registers left!")),
-                };
-                write!(fd, "MOV R{}, {}\n", reg1, val)?;
-                Ok(Some(reg1))
-            }
-            Err(_) => Err(err_from_str("cannot be represented as a u32")),
-        },
+        Tnode::Constant { value, .. } => {
+            let reg1 = match REGISTERS.lock().unwrap().get_reg() {
+                Some(r) => r,
+                None => return Err(err_from_str("No registers left!")),
+            };
+            write!(fd, "MOV R{}, {}\n", reg1, value)?;
+            Ok(Some(reg1))
+        }
         var @ Tnode::Var { .. } => {
-            let reg1 = match registers.get_reg() {
+            let reg1 = match REGISTERS.lock().unwrap().get_reg() {
                 Some(r) => r,
                 None => return Err(err_from_str("No registers left!")),
             };
@@ -50,8 +47,8 @@ fn evaluator(
             Ok(Some(reg1))
         }
         Tnode::Operator { op, lhs, rhs, .. } => {
-            let reg1 = evaluator(lhs, lexer, fd, registers, labels)?.unwrap();
-            let reg2 = evaluator(rhs, lexer, fd, registers, labels)?.unwrap();
+            let reg1 = evaluator(lhs, fd)?.unwrap();
+            let reg2 = evaluator(rhs, fd)?.unwrap();
             match op {
                 Op::Add => write!(fd, "ADD R{}, R{}\n", reg1, reg2)?,
                 Op::Sub => write!(fd, "SUB R{}, R{}\n", reg1, reg2)?,
@@ -65,15 +62,15 @@ fn evaluator(
                 Op::LT => write!(fd, "LT R{}, R{}\n", reg1, reg2)?,
                 Op::LE => write!(fd, "LE R{}, R{}\n", reg1, reg2)?,
             }
-            registers.free_reg(reg2);
+            REGISTERS.lock().unwrap().free_reg(reg2);
             Ok(Some(reg1))
         }
         Tnode::Read { var, .. } => {
-            let reg1 = match registers.get_reg() {
+            let reg1 = match REGISTERS.lock().unwrap().get_reg() {
                 Some(r) => r,
                 None => return Err(err_from_str("No registers left!")),
             };
-            pre_call(fd, registers);
+            pre_call(fd);
             write!(fd, "MOV R{}, \"Read\"\n", reg1)?;
             write!(fd, "PUSH R{}\n", reg1)?;
             write!(fd, "MOV R{}, -1\n", reg1)?;
@@ -83,18 +80,18 @@ fn evaluator(
             write!(fd, "ADD SP, 2\n")?;
             write!(fd, "CALL 0\n")?;
             write!(fd, "SUB SP, 5\n")?;
-            post_call(fd, registers);
-            registers.free_reg(reg1);
+            post_call(fd);
+            REGISTERS.lock().unwrap().free_reg(reg1);
             Ok(None)
         }
         Tnode::Write { expression, .. } => {
-            let reg1 = match registers.get_reg() {
+            let reg1 = match REGISTERS.lock().unwrap().get_reg() {
                 Some(r) => r,
                 None => return Err(err_from_str("No registers left!")),
             };
-            let reg2 = evaluator(expression, lexer, fd, registers, labels)?.unwrap();
+            let reg2 = evaluator(expression, fd)?.unwrap();
 
-            pre_call(fd, registers);
+            pre_call(fd);
             write!(fd, "MOV R{}, \"Write\"\n", reg1)?;
             write!(fd, "PUSH R{}\n", reg1)?;
             write!(fd, "MOV R{}, -2\n", reg1)?;
@@ -103,21 +100,28 @@ fn evaluator(
             write!(fd, "ADD SP, 2\n")?;
             write!(fd, "CALL 0\n")?;
             write!(fd, "SUB SP, 5\n")?;
-            post_call(fd, registers);
+            post_call(fd);
 
-            registers.free_reg(reg1);
-            registers.free_reg(reg2);
-            Ok(None)
-        }
-        Tnode::Connector { left, right, .. } => {
-            evaluator(left, lexer, fd, registers, labels)?;
-            evaluator(right, lexer, fd, registers, labels)?;
+            REGISTERS.lock().unwrap().free_reg(reg1);
+            REGISTERS.lock().unwrap().free_reg(reg2);
             Ok(None)
         }
         Tnode::Asgn { lhs, rhs, .. } => {
-            let reg1 = evaluator(rhs, lexer, fd, registers, labels)?.unwrap();
+            let reg1 = evaluator(rhs, fd)?.unwrap();
             write!(fd, "MOV [{}], R{}\n", lhs.get_address()?, reg1)?;
-            registers.free_reg(reg1);
+            REGISTERS.lock().unwrap().free_reg(reg1);
+            Ok(None)
+        }
+        Tnode::Continue => {
+            if let Some(label) = LP.lock().unwrap().condition_label() {
+                write!(fd, "JMP <L{}>\n", label)?;
+            }
+            Ok(None)
+        }
+        Tnode::Break => {
+            if let Some(label) = LP.lock().unwrap().exit_label() {
+                write!(fd, "JMP <L{}>\n", label)?;
+            }
             Ok(None)
         }
         Tnode::If {
@@ -126,57 +130,80 @@ fn evaluator(
             else_stmt,
             ..
         } => {
+            let mut labels = LABELS.lock().unwrap();
             let label1 = labels.get();
             let label2 = labels.get();
-            let reg1 = evaluator(condition, lexer, fd, registers, labels)?.unwrap();
+            drop(labels);
+            let reg1 = evaluator(condition, fd)?.unwrap();
             write!(fd, "JZ R{}, <L{}>\n", reg1, label1)?;
-            evaluator(if_stmt, lexer, fd, registers, labels)?;
+            evaluator(if_stmt, fd)?;
             write!(fd, "JMP <L{}>\n", label2)?;
             write!(fd, "L{}:", label1)?;
             if let Some(stmts) = else_stmt {
-                evaluator(stmts, lexer, fd, registers, labels)?;
+                evaluator(stmts, fd)?;
             }
             write!(fd, "L{}:", label2)?;
-            registers.free_reg(reg1);
+            REGISTERS.lock().unwrap().free_reg(reg1);
             Ok(None)
         }
         Tnode::While {
             condition, stmts, ..
         } => {
-            let label1 = labels.get();
-            let label2 = labels.get();
-            write!(fd, "L{}:", label1)?;
-            let reg1 = evaluator(condition, lexer, fd, registers, labels)?.unwrap();
-            write!(fd, "JZ R{}, <L{}>\n", reg1, label2)?;
-            evaluator(stmts, lexer, fd, registers, labels)?;
-            write!(fd, "JMP <L{}>\n", label1)?;
-            write!(fd, "L{}:", label2)?;
-            registers.free_reg(reg1);
+            let mut labels = LABELS.lock().unwrap();
+            let condition_label = labels.get();
+            let exit_label = labels.get();
+            drop(labels);
+            LP.lock().unwrap().push((condition_label, exit_label));
+            write!(fd, "L{}:", condition_label)?;
+            let reg1 = evaluator(condition, fd)?.unwrap();
+            write!(fd, "JZ R{}, <L{}>\n", reg1, exit_label)?;
+            evaluator(stmts, fd)?;
+            write!(fd, "JMP <L{}>\n", condition_label)?;
+            write!(fd, "L{}:", exit_label)?;
+            LP.lock().unwrap().pop();
+            REGISTERS.lock().unwrap().free_reg(reg1);
             Ok(None)
         }
-        Tnode::Empty { .. } => Ok(None),
+        Tnode::Repeat {
+            stmts, condition, ..
+        } => {
+            let mut labels = LABELS.lock().unwrap();
+            let stmt_label = labels.get();
+            let condition_label = labels.get();
+            let exit_label = labels.get();
+            drop(labels);
+            LP.lock().unwrap().push((condition_label, exit_label));
+            write!(fd, "L{}:", stmt_label)?;
+            evaluator(stmts, fd)?;
+            write!(fd, "L{}:", condition_label)?;
+            let reg1 = evaluator(condition, fd)?.unwrap();
+            write!(fd, "JZ R{}, <L{}>\n", reg1, stmt_label)?;
+            write!(fd, "L{}:", exit_label)?;
+            LP.lock().unwrap().pop();
+            Ok(None)
+        }
+        Tnode::Connector { left, right, .. } => {
+            evaluator(left, fd)?;
+            evaluator(right, fd)?;
+            Ok(None)
+        }
+        Tnode::Empty => Ok(None),
     }
 }
 
-pub fn generate_code(
-    root: &Tnode,
-    lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-    file_name: &PathBuf,
-) -> Result<(), Box<dyn Error>> {
+pub fn generate_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Error>> {
     let mut fd = OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .open(file_name)?;
-    let mut registers = RegisterPool::default();
-    let mut labels = Label::default();
     write!(
         fd,
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         0, 2056, 0, 0, 0, 0, 0, 0
     )?;
     write!(fd, "MOV SP, {}\n", 4095 + 26)?;
-    match evaluator(root, lexer, &mut fd, &mut registers, &mut labels) {
+    match evaluator(root, &mut fd) {
         Ok(_) => {
             write!(fd, "MOV R0, 10\n")?;
             write!(fd, "PUSH R0\n")?;

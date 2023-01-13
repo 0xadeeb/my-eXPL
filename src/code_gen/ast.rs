@@ -6,6 +6,7 @@ pub enum Tnode {
     Constant {
         span: Span,
         ttype: Type,
+        value: String,
     },
     Operator {
         op: Op,
@@ -48,9 +49,14 @@ pub enum Tnode {
         condition: Box<Tnode>,
         stmts: Box<Tnode>,
     },
-    Empty {
+    Repeat {
         span: Span,
+        stmts: Box<Tnode>,
+        condition: Box<Tnode>,
     },
+    Continue,
+    Break,
+    Empty,
 }
 
 #[derive(Debug)]

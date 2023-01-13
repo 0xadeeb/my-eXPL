@@ -1,60 +1,15 @@
 use super::code_gen::*;
-use lrpar::Span;
+use lrlex::DefaultLexeme;
+use lrpar::{Lexeme, NonStreamingLexer, Span};
 use std::error::Error;
 
-#[derive(Debug)]
-pub struct RegisterPool {
-    available: [bool; 20],
-}
+pub mod label;
+pub mod loop_util;
+pub mod register;
 
-impl Default for RegisterPool {
-    fn default() -> Self {
-        Self {
-            available: [true; 20],
-        }
-    }
-}
-
-impl RegisterPool {
-    pub fn get_reg(&mut self) -> Option<u8> {
-        for (i, reg) in self.available.iter_mut().enumerate() {
-            if *reg {
-                *reg = false;
-                return Some(i as u8);
-            }
-        }
-        None
-    }
-
-    pub fn free_reg(&mut self, reg: u8) {
-        if reg < 20 {
-            self.available[reg as usize] = true;
-        }
-    }
-
-    pub fn accquired_regs<'t>(&'t self) -> impl Iterator<Item = u8> + DoubleEndedIterator + 't {
-        self.available
-            .iter()
-            .enumerate()
-            .filter(|(_, &v)| !v)
-            .map(|(i, _)| i as u8)
-    }
-}
-
-#[derive(Debug)]
-pub struct Label {
-    counter: u16,
-}
-impl Label {
-    pub fn default() -> Self {
-        Self { counter: 0 }
-    }
-    pub fn get(&mut self) -> u16 {
-        let label = self.counter;
-        self.counter += 1;
-        label
-    }
-}
+pub use self::label::Label;
+pub use self::loop_util::LoopStack;
+pub use self::register::RegisterPool;
 
 pub fn err_from_str(e: &str) -> Box<dyn Error> {
     Box::<dyn Error>::from(e)
@@ -141,6 +96,22 @@ pub fn create_while_node(
     })
 }
 
+pub fn create_repeat_node(
+    span: Span,
+    stmts: Tnode,
+    condition: Tnode,
+) -> Result<Tnode, (Option<Span>, &'static str)> {
+    match condition.get_type() {
+        Type::Bool => {}
+        _ => return Err((condition.get_span(), "Type mismatch, excepted boolen")),
+    }
+    Ok(Tnode::Repeat {
+        span,
+        stmts: Box::new(stmts),
+        condition: Box::new(condition),
+    })
+}
+
 pub fn create_if_node(
     span: Span,
     condition: Tnode,
@@ -157,4 +128,18 @@ pub fn create_if_node(
         if_stmt: Box::new(if_stmts),
         else_stmt: else_stmts.map(|val| Box::new(val)),
     })
+}
+
+pub fn create_constant_node(
+    lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+    token: &DefaultLexeme,
+) -> Result<Tnode, (Option<Span>, &'static str)> {
+    match lexer.span_str(token.span()).parse::<u32>() {
+        Ok(val) => Ok(Tnode::Constant {
+            span: token.span(),
+            ttype: Type::Int,
+            value: val.to_string(),
+        }),
+        Err(_) => Err((Some(token.span()), "Can't parse to u32")),
+    }
 }
