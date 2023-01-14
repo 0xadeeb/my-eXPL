@@ -191,7 +191,7 @@ fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
     }
 }
 
-pub fn generate_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn emit_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Error>> {
     let mut fd = OpenOptions::new()
         .create(true)
         .truncate(true)

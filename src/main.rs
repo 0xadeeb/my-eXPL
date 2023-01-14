@@ -6,13 +6,13 @@ use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 // Using `lrlex_mod!` brings the lexer for `lexer.l` into scope. By default the
 // module name will be `lexer_l` (i.e. the file name, minus any extensions,
 // with a suffix of `_l`).
-lrlex_mod!("lexer.l");
-lrlex_mod!("linker.l");
+lrlex_mod!("frontend/lexer.l");
+lrlex_mod!("backend/linker.l");
 
 // Using `lrpar_mod!` brings the parser for `parser.y` into scope. By default the
 // module name will be `parser_y` (i.e. the file name, minus any extensions,
 // with a suffix of `_y`).
-lrpar_mod!("parser.y");
+lrpar_mod!("frontend/parser.y");
 
 fn get_input(path: &PathBuf) -> Result<String, Box<dyn Error>> {
     let mut fd = File::open(path)?;
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let obj_file = input_file.with_extension("obj");
     match res {
-        Some(Ok(root)) => match code_gen::generate_code(&root, &obj_file) {
+        Some(Ok(root)) => match code_gen::emit_code(&root, &obj_file) {
             Ok(_) => {
                 let output_file = input_file.with_extension("xsm");
                 let input = get_input(&obj_file)?;
