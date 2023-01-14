@@ -44,7 +44,7 @@ Program -> Result<Tnode,(Option<Span>, &'static str)>:
     ;
 
 Slist -> Result<Tnode,(Option<Span>, &'static str)>:
-      Slist Stmt  { Ok(Tnode::Connector{span: $span, left: Box::new($1?), right: Box::new($2?),}) }
+      Slist Stmt  { Ok(Tnode::Connector{left: Box::new($1?), right: Box::new($2?),}) }
     | Stmt        { $1 }
     ;
 
@@ -121,5 +121,6 @@ Unmatched -> ():
 
 // Any functions here are in scope for all the grammar actions above.
 
-use myexpl::*;
 use lrpar::Span;
+use myexpl::utils::node::*;
+use myexpl::ast::*;

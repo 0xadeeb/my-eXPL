@@ -1,15 +1,15 @@
 use lrlex::lrlex_mod;
 use lrpar::{lrpar_mod, NonStreamingLexer};
-use myexpl::*;
+use myexpl::backend::{code_gen, linker};
 use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 
-// Using `lrlex_mod!` brings the lexer for `calc.l` into scope. By default the
+// Using `lrlex_mod!` brings the lexer for `lexer.l` into scope. By default the
 // module name will be `lexer_l` (i.e. the file name, minus any extensions,
 // with a suffix of `_l`).
 lrlex_mod!("lexer.l");
 lrlex_mod!("linker.l");
-// Using `lrpar_mod!` brings the parser for `calc.y` into scope. By default the
-//
+
+// Using `lrpar_mod!` brings the parser for `parser.y` into scope. By default the
 // module name will be `parser_y` (i.e. the file name, minus any extensions,
 // with a suffix of `_y`).
 lrpar_mod!("parser.y");
@@ -48,13 +48,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let obj_file = input_file.with_extension("obj");
     match res {
-        Some(Ok(root)) => match generate_code(&root, &obj_file) {
+        Some(Ok(root)) => match code_gen::generate_code(&root, &obj_file) {
             Ok(_) => {
                 let output_file = input_file.with_extension("xsm");
                 let input = get_input(&obj_file)?;
                 let linker_def = linker_l::lexerdef();
                 let linker_lex = linker_def.lexer(&input);
-                match translate_label(&linker_lex, &linker_def, &output_file) {
+                match linker::translate_label(&linker_lex, &linker_def, &output_file) {
                     Ok(_) => println!("Comipled successfully"),
                     e @ Err(_) => return e,
                 }

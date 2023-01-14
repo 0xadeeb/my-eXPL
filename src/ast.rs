@@ -21,7 +21,6 @@ pub enum Tnode {
         name: String,
     },
     Asgn {
-        span: Span,
         lhs: Box<Tnode>,
         rhs: Box<Tnode>,
     },
@@ -34,23 +33,19 @@ pub enum Tnode {
         expression: Box<Tnode>,
     },
     Connector {
-        span: Span,
         left: Box<Tnode>,
         right: Box<Tnode>,
     },
     If {
-        span: Span,
         condition: Box<Tnode>,
         if_stmt: Box<Tnode>,
         else_stmt: Option<Box<Tnode>>,
     },
     While {
-        span: Span,
         condition: Box<Tnode>,
         stmts: Box<Tnode>,
     },
     Repeat {
-        span: Span,
         stmts: Box<Tnode>,
         condition: Box<Tnode>,
     },

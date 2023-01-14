@@ -45,7 +45,7 @@ begin
                 until (z <= l);
 
                 k = k + 1;
-            endwhile;
+            end;
 
             j = j + 1;
         until(x <= j);

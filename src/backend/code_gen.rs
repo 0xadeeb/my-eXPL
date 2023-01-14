@@ -1,5 +1,5 @@
-use super::ast::*;
-use crate::utils::{err_from_str, Label, LoopStack, RegisterPool};
+use crate::ast::*;
+use crate::utils::{err_from_str, label::Label, loop_util::LoopStack, register::RegisterPool};
 use lazy_static::lazy_static;
 use std::{
     error::Error,
@@ -27,7 +27,7 @@ fn post_call(fd: &mut File) {
     }
 }
 
-fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
+fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
     match node {
         Tnode::Constant { value, .. } => {
             let reg1 = match REGISTERS.lock().unwrap().get_reg() {
@@ -47,8 +47,8 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
             Ok(Some(reg1))
         }
         Tnode::Operator { op, lhs, rhs, .. } => {
-            let reg1 = evaluator(lhs, fd)?.unwrap();
-            let reg2 = evaluator(rhs, fd)?.unwrap();
+            let reg1 = evaluate(lhs, fd)?.unwrap();
+            let reg2 = evaluate(rhs, fd)?.unwrap();
             match op {
                 Op::Add => write!(fd, "ADD R{}, R{}\n", reg1, reg2)?,
                 Op::Sub => write!(fd, "SUB R{}, R{}\n", reg1, reg2)?,
@@ -89,7 +89,7 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
                 Some(r) => r,
                 None => return Err(err_from_str("No registers left!")),
             };
-            let reg2 = evaluator(expression, fd)?.unwrap();
+            let reg2 = evaluate(expression, fd)?.unwrap();
 
             pre_call(fd);
             write!(fd, "MOV R{}, \"Write\"\n", reg1)?;
@@ -107,7 +107,7 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
             Ok(None)
         }
         Tnode::Asgn { lhs, rhs, .. } => {
-            let reg1 = evaluator(rhs, fd)?.unwrap();
+            let reg1 = evaluate(rhs, fd)?.unwrap();
             write!(fd, "MOV [{}], R{}\n", lhs.get_address()?, reg1)?;
             REGISTERS.lock().unwrap().free_reg(reg1);
             Ok(None)
@@ -134,13 +134,13 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
             let label1 = labels.get();
             let label2 = labels.get();
             drop(labels);
-            let reg1 = evaluator(condition, fd)?.unwrap();
+            let reg1 = evaluate(condition, fd)?.unwrap();
             write!(fd, "JZ R{}, <L{}>\n", reg1, label1)?;
-            evaluator(if_stmt, fd)?;
+            evaluate(if_stmt, fd)?;
             write!(fd, "JMP <L{}>\n", label2)?;
             write!(fd, "L{}:", label1)?;
             if let Some(stmts) = else_stmt {
-                evaluator(stmts, fd)?;
+                evaluate(stmts, fd)?;
             }
             write!(fd, "L{}:", label2)?;
             REGISTERS.lock().unwrap().free_reg(reg1);
@@ -155,9 +155,9 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
             drop(labels);
             LP.lock().unwrap().push((condition_label, exit_label));
             write!(fd, "L{}:", condition_label)?;
-            let reg1 = evaluator(condition, fd)?.unwrap();
+            let reg1 = evaluate(condition, fd)?.unwrap();
             write!(fd, "JZ R{}, <L{}>\n", reg1, exit_label)?;
-            evaluator(stmts, fd)?;
+            evaluate(stmts, fd)?;
             write!(fd, "JMP <L{}>\n", condition_label)?;
             write!(fd, "L{}:", exit_label)?;
             LP.lock().unwrap().pop();
@@ -174,17 +174,17 @@ fn evaluator(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> 
             drop(labels);
             LP.lock().unwrap().push((condition_label, exit_label));
             write!(fd, "L{}:", stmt_label)?;
-            evaluator(stmts, fd)?;
+            evaluate(stmts, fd)?;
             write!(fd, "L{}:", condition_label)?;
-            let reg1 = evaluator(condition, fd)?.unwrap();
+            let reg1 = evaluate(condition, fd)?.unwrap();
             write!(fd, "JZ R{}, <L{}>\n", reg1, stmt_label)?;
             write!(fd, "L{}:", exit_label)?;
             LP.lock().unwrap().pop();
             Ok(None)
         }
         Tnode::Connector { left, right, .. } => {
-            evaluator(left, fd)?;
-            evaluator(right, fd)?;
+            evaluate(left, fd)?;
+            evaluate(right, fd)?;
             Ok(None)
         }
         Tnode::Empty => Ok(None),
@@ -203,7 +203,7 @@ pub fn generate_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Er
         0, 2056, 0, 0, 0, 0, 0, 0
     )?;
     write!(fd, "MOV SP, {}\n", 4095 + 26)?;
-    match evaluator(root, &mut fd) {
+    match evaluate(root, &mut fd) {
         Ok(_) => {
             write!(fd, "MOV R0, 10\n")?;
             write!(fd, "PUSH R0\n")?;

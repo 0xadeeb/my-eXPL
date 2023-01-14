@@ -31,5 +31,5 @@ until           "UNTIL"
 ;               ";"
 [a-z]           "VAR"
 [0-9]+          "NUM"
-[\t\n\r ]+      ;
+[\s]+           ;
 .               "UNMATCHED"

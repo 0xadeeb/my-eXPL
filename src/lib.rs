@@ -1,7 +1,3 @@
-mod code_gen;
-mod linker;
-mod utils;
-
-pub use crate::code_gen::*;
-pub use crate::linker::*;
-pub use crate::utils::*;
+pub mod ast;
+pub mod backend;
+pub mod utils;
