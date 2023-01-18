@@ -1,5 +1,8 @@
 use crate::ast::*;
-use crate::utils::{err_from_str, label::Label, loop_util::LoopStack, register::RegisterPool};
+use crate::utils::{
+    err_from_str, label::LabelGenerator, loop_util::LoopStack, register::RegisterPool,
+};
+use crate::SYMBOL_TABLE;
 use lazy_static::lazy_static;
 use std::{
     error::Error,
@@ -11,7 +14,7 @@ use std::{
 
 lazy_static! {
     static ref REGISTERS: Mutex<RegisterPool> = Mutex::new(RegisterPool::default());
-    static ref LABELS: Mutex<Label> = Mutex::new(Label::default());
+    static ref LABELS: Mutex<LabelGenerator> = Mutex::new(LabelGenerator::default());
     static ref LP: Mutex<LoopStack> = Mutex::new(LoopStack::default());
 }
 
@@ -202,7 +205,11 @@ pub fn emit_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Error>
         "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         0, 2056, 0, 0, 0, 0, 0, 0
     )?;
-    write!(fd, "MOV SP, {}\n", 4095 + 26)?;
+    write!(
+        fd,
+        "MOV SP, {}\n",
+        4095 + SYMBOL_TABLE.lock().unwrap().len()
+    )?;
     match evaluate(root, &mut fd) {
         Ok(_) => {
             write!(fd, "MOV R0, 10\n")?;

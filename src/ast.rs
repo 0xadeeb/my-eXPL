@@ -1,3 +1,4 @@
+use crate::symbol_table::*;
 use lrpar::Span;
 use std::error::Error;
 
@@ -17,8 +18,7 @@ pub enum Tnode {
     },
     Var {
         span: Span,
-        ttype: Type,
-        name: String,
+        symbol: Gsymbol,
     },
     Asgn {
         lhs: Box<Tnode>,
@@ -78,9 +78,9 @@ pub enum Type {
 }
 
 impl Tnode {
-    pub fn get_address(&self) -> Result<u32, Box<dyn Error>> {
+    pub fn get_address(&self) -> Result<u16, Box<dyn Error>> {
         match self {
-            Tnode::Var { name, .. } => Ok(name.as_bytes()[0] as u32 + 4096 - 97),
+            Tnode::Var { symbol, .. } => Ok(symbol.get_address()),
             _ => Err(Box::<dyn Error>::from(
                 "LHS of assign statment not variable",
             )),
@@ -89,9 +89,8 @@ impl Tnode {
 
     pub fn get_type(&self) -> Type {
         match self {
-            Tnode::Var { ttype, .. }
-            | Tnode::Operator { ttype, .. }
-            | Tnode::Constant { ttype, .. } => ttype.clone(),
+            Tnode::Var { symbol, .. } => symbol.get_type(),
+            Tnode::Operator { ttype, .. } | Tnode::Constant { ttype, .. } => ttype.clone(),
             _ => Type::Void,
         }
     }

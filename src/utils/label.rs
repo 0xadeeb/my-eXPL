@@ -1,8 +1,8 @@
 #[derive(Debug)]
-pub struct Label {
+pub struct LabelGenerator {
     counter: u16,
 }
-impl Label {
+impl LabelGenerator {
     pub fn default() -> Self {
         Self { counter: 0 }
     }
