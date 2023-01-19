@@ -6,19 +6,21 @@ use std::error::Error;
 pub enum Tnode {
     Constant {
         span: Span,
-        ttype: Type,
+        dtype: Type,
         value: String,
     },
     Operator {
         op: Op,
         span: Span,
-        ttype: Type,
+        dtype: Type,
         lhs: Box<Tnode>,
         rhs: Box<Tnode>,
     },
     Var {
         span: Span,
-        symbol: Gsymbol,
+        symbol: Symbol,
+        access: Vec<Box<Tnode>>,
+        ref_type: RefType,
     },
     Asgn {
         lhs: Box<Tnode>,
@@ -69,7 +71,7 @@ pub enum Op {
     LE,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Void,
     Int,
@@ -77,10 +79,16 @@ pub enum Type {
     String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RefType {
+    RHS,
+    LHS,
+}
+
 impl Tnode {
     pub fn get_address(&self) -> Result<u16, Box<dyn Error>> {
         match self {
-            Tnode::Var { symbol, .. } => Ok(symbol.get_address()),
+            Tnode::Var { symbol, .. } => Ok(symbol.base_address()),
             _ => Err(Box::<dyn Error>::from(
                 "LHS of assign statment not variable",
             )),
@@ -90,7 +98,7 @@ impl Tnode {
     pub fn get_type(&self) -> Type {
         match self {
             Tnode::Var { symbol, .. } => symbol.get_type(),
-            Tnode::Operator { ttype, .. } | Tnode::Constant { ttype, .. } => ttype.clone(),
+            Tnode::Operator { dtype, .. } | Tnode::Constant { dtype, .. } => dtype.clone(),
             _ => Type::Void,
         }
     }
@@ -101,6 +109,18 @@ impl Tnode {
             | Tnode::Operator { span, .. }
             | Tnode::Constant { span, .. } => Some(span.clone()),
             _ => None,
+        }
+    }
+
+    pub fn set_ref(&mut self, r: RefType) -> Result<(), &'static str> {
+        match self {
+            Tnode::Var {
+                ref mut ref_type, ..
+            } => {
+                *ref_type = r;
+                Ok(())
+            }
+            _ => Err("Not a variable"),
         }
     }
 }

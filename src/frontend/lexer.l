@@ -1,4 +1,5 @@
 %%
+
 begin            "BEGIN"
 end              "END"
 read             "READ"
@@ -17,7 +18,8 @@ until            "UNTIL"
 decl             "DECL"
 enddecl          "ENDDECL"
 int              "INT_T"
-string           "STRING_T"
+str              "STRING_T"
+
 \+               "ADD"
 \-               "SUB"
 \*               "MULT"
@@ -30,11 +32,19 @@ string           "STRING_T"
 >                "GT"
 <=               "LE"
 >=               "GE"
+
 \(               "("
 \)               ")"
+\[               "["
+\]               "]"
 ,                ","
 ;                ";"
+
 [\pL_]\w*       "VAR"
 [0-9]+          "NUM"
+["][^\n]*?["]   "STRING_C"
+
+//[^\n]*        ;
 [\s]+           ;
+
 .               "UNMATCHED"

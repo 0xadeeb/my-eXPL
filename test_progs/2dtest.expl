@@ -1,0 +1,19 @@
+decl
+	int d2[4][4];
+	int i, j, k;
+enddecl
+begin
+	i = 0;
+	read(d2[0][0]);
+	k = d2[0][0];
+	while(i < 4) do
+		j = 0;
+		while (j < 4) do 
+			d2[i][j] = k + i + j;
+			j = j + 1;
+		endwhile;
+		i = i + 1;
+	endwhile;
+
+	write(d2[3][3]);
+end

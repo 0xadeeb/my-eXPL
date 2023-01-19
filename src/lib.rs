@@ -1,10 +1,9 @@
-use std::{collections::HashMap, sync::Mutex};
-
 use lazy_static::lazy_static;
+use std::sync::Mutex;
+use symbol_table::SymbolTable;
 
 lazy_static! {
-    pub static ref SYMBOL_TABLE: Mutex<HashMap<String, symbol_table::Gsymbol>> =
-        Mutex::new(HashMap::new());
+    pub static ref SYMBOL_TABLE: Mutex<SymbolTable> = Mutex::new(SymbolTable::default());
 }
 
 pub mod ast;

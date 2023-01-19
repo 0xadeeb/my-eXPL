@@ -1,0 +1,17 @@
+decl
+  int num, sum;
+  str mesg;
+enddecl
+
+begin
+    // This is a test
+    sum = 0;
+    repeat do
+      read(num);
+      sum = sum + num;  // This is a test progam
+    until(num == 0);
+    write("sum is:");
+    write(sum);
+    mesg = "good bye";
+    write(mesg);
+end

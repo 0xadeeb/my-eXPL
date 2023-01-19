@@ -1,5 +1,11 @@
 %start Program
 
+%avoid_insert "NUM"
+%avoid_insert "STRING_C"
+%avoid_insert "VAR"
+%avoid_insert "STRING_T"
+%avoid_insert "INT_T"
+
 %epp ADD      "+"
 %epp SUB      "-"
 %epp MULT     "*"
@@ -33,8 +39,9 @@
 %epp ENDDECL  "enddecl"
 %epp INT_T    "int"
 %epp STRING_T "string"
+%epp STRING_C "string_const"
 
-%token "(" ")" "," ";"
+%token "(" ")" "," ";" "[" "]"
 %nonassoc "EQ" "NE" "LT" "GT" "LE" "GE"
 %left "ADD" "SUB"
 %left "MULT" "DIV" "MOD"
@@ -59,9 +66,15 @@ Decl -> Result<(), (Option<Span>, &'static str)>:
       Type VarList ";"    { insert_variables($lexer, $1?, $2?) }
     ;
 
-VarList -> Result<LinkedList<Span>, (Option<Span>, &'static str)>:
-      Id "," VarList   { let mut $3 = $3?; $3.push_front($1?.span()); Ok($3) }
-    | Id               { Ok(LinkedList::from([$span])) }
+VarList -> Result<LinkedList<(Span, Vec<u32>)>, (Option<Span>, &'static str)>:
+      VarDef "," VarList   { let mut $3 = $3?; $3.push_front($1?); Ok($3) }
+    | VarDef               { Ok(LinkedList::from([$1?])) }
+    ;
+
+VarDef -> Result<(Span, Vec<u32>), (Option<Span>, &'static str)>:
+      Id                            { Ok(($span, Vec::new())) }
+    | Id "[" Num "]"                { Ok(($1?.span(), Vec::from([parse_int($lexer, &$3?)?]))) }
+    | Id "[" Num "]" "[" Num "]"    { Ok(($1?.span(), Vec::from([parse_int($lexer, &$3?)?, parse_int($lexer, &$6?)?]))) }
     ;
 
 Type -> Result<Type, (Option<Span>, &'static str)>:
@@ -104,11 +117,11 @@ RepeatStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 InputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "READ" "(" Id ")" ";"   { create_read_node($lexer, &$3?) }
+      "READ" "(" VarAccess ")" ";"   { create_read_node($span, $3?) }
     ;
 
 OutputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WRITE" "(" E ")" ";"   { create_write_node($span, $3?) }
+      "WRITE" "(" E ")" ";"        { create_write_node($span, $3?) }
     ;
 
 BreakStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -120,13 +133,7 @@ ContinueStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Id "ASGN" E ";"   {
-          create_asg_node (
-            $span,
-            get_variable($lexer, &$1?)?,
-            $3?
-          )
-      }
+      VarAccess "ASGN" E ";"   { create_asg_node($span, $1?, $3?) }
     ;
 
 E -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -142,12 +149,27 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | E "LE" E      { create_bool_node(Op::LE, $span, $1?, $3?) }
     | E "LT" E      { create_bool_node(Op::LT, $span, $1?, $3?) }
     | "(" E ")"     { $2 }
-    | "NUM"         { create_constant_node($lexer, $1.as_ref().map_err(|e| (Some(e.span()), "Faulty lexeme"))?) }
-    | Id            { get_variable($lexer, &$1?) }
+    | VarAccess     { $1 }
+    | Num           { create_constant_node($lexer, &$1?, Type::Int) }
+    | String        { create_constant_node($lexer, &$1?, Type::String) }
+    ;
+
+VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
+      Id                         { get_variable($lexer, &$1?, Vec::new(), RefType::RHS) }
+    | Id "[" E "]"               { get_variable($lexer, &$1?, Vec::from([Box::new($3?)]), RefType::RHS) }
+    | Id "[" E "]" "[" E "]"     { get_variable($lexer, &$1?, Vec::from([Box::new($3?), Box::new($6?)]), RefType::RHS) }
     ;
 
 Id -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
-    "VAR"     { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+    "VAR"          { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+    ;
+
+Num -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
+    "NUM"          { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+    ;
+
+String -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
+    "STRING_C"     { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
     ;
 
 Unmatched -> ():
@@ -160,6 +182,6 @@ Unmatched -> ():
 
 use lrlex::DefaultLexeme;
 use lrpar::Span;
-use myexpl::utils::node::*;
 use myexpl::ast::*;
+use myexpl::utils::node::*;
 use std::collections::LinkedList;
