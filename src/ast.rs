@@ -2,7 +2,7 @@ use crate::symbol_table::*;
 use lrpar::Span;
 use std::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Tnode {
     Constant {
         span: Span,
@@ -56,7 +56,7 @@ pub enum Tnode {
     Empty,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Op {
     Add,
     Sub,

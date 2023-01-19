@@ -156,8 +156,8 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
 
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
       Id                         { get_variable($lexer, &$1?, Vec::new(), RefType::RHS) }
-    | Id "[" E "]"               { get_variable($lexer, &$1?, Vec::from([Box::new($3?)]), RefType::RHS) }
-    | Id "[" E "]" "[" E "]"     { get_variable($lexer, &$1?, Vec::from([Box::new($3?), Box::new($6?)]), RefType::RHS) }
+    | Id "[" E "]"               { get_variable($lexer, &$1?, create_access_vec(&[$3?])?, RefType::RHS) }
+    | Id "[" E "]" "[" E "]"     { get_variable($lexer, &$1?, create_access_vec(&[$3?, $6?])?, RefType::RHS) }
     ;
 
 Id -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:

@@ -199,3 +199,13 @@ pub fn get_variable(
         access,
     })
 }
+
+pub fn create_access_vec(exp: &[Tnode]) -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)> {
+    for e in exp {
+        match e.get_type() {
+            Type::Int => {}
+            _ => return Err((e.get_span(), "Index should be of type integer")),
+        }
+    }
+    Ok(exp.iter().map(|e| Box::new(e.clone())).collect())
+}
