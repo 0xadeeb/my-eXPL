@@ -1,0 +1,9 @@
+#+title: EXPL
+
+This repository contains my implementation of ExpL (Experimental Programming Language) done as part of the Compiler Laboratory course I took in 2023.
+
+The compiler is implemented in Rust using lexer and parser provided by [[https://softdevteam.github.io/grmtools/master/book/index.html][grmtools]].
+
+It compiles the source language ExpL (spec [[https://silcnitc.github.io/expl.html][here]] and [[https://silcnitc.github.io/oexpl-specification.html][here]]) to the low-level XSM (eXperimental String Machine) machine code (ABI [[https://silcnitc.github.io/abi.html][here]]) which runs on ExpOS (Experimental Operating System) a simulator for which can be found [[https://silcnitc.github.io/install.html#navxsm][here]].
+
+More details about the project can be found on the [[https://silcnitc.github.io/][website]].
