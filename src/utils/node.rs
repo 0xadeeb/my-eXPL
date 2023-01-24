@@ -1,10 +1,10 @@
-use crate::{ast::*, SYMBOL_TABLE};
+use crate::{ast::*, symbol_table::*, SYMBOL_TABLE};
 use lrlex::DefaultLexeme;
 use lrpar::{Lexeme, NonStreamingLexer, Span};
 use std::collections::LinkedList;
 
 pub fn create_int_node(
-    op: Op,
+    op: BinaryOpType,
     span: Span,
     left: Tnode,
     right: Tnode,
@@ -13,7 +13,7 @@ pub fn create_int_node(
         (Type::Int, Type::Int) => {}
         _ => return Err((Some(span), "Type mismatch, expected integer")),
     }
-    Ok(Tnode::Operator {
+    Ok(Tnode::BinaryOperator {
         op,
         span,
         dtype: Type::Int,
@@ -23,16 +23,16 @@ pub fn create_int_node(
 }
 
 pub fn create_bool_node(
-    op: Op,
+    op: BinaryOpType,
     span: Span,
     left: Tnode,
     right: Tnode,
 ) -> Result<Tnode, (Option<Span>, &'static str)> {
     match (left.get_type(), right.get_type()) {
-        (Type::Int, Type::Int) => {}
+        (Type::Int, Type::Int) | (Type::Str, Type::Str) => {}
         _ => return Err((Some(span), "Type mismatch, expected integer")),
     }
-    Ok(Tnode::Operator {
+    Ok(Tnode::BinaryOperator {
         op,
         span,
         dtype: Type::Bool,
@@ -60,6 +60,31 @@ pub fn create_asg_node(
     })
 }
 
+pub fn create_ref(span: Span, exp: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+    match exp {
+        Tnode::Var { .. } => {}
+        _ => return Err((Some(span), "Referencing just defined for variables")),
+    }
+    Ok(Tnode::RefOperator {
+        span,
+        dtype: exp.get_type().rref().map_err(|msg| (Some(span), msg))?,
+        var: Box::new(exp),
+    })
+}
+
+pub fn create_deref(span: Span, exp: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+    match exp {
+        Tnode::Var { .. } => {}
+        _ => return Err((Some(span), "Dereferencing just defined for variables")),
+    }
+    Ok(Tnode::DeRefOperator {
+        span,
+        dtype: exp.get_type().deref().map_err(|msg| (Some(span), msg))?,
+        ref_type: RefType::RHS,
+        var: Box::new(exp),
+    })
+}
+
 pub fn create_read_node(span: Span, mut var: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
     var.set_ref(RefType::LHS)
         .map_err(|msg| (var.get_span(), msg))?;
@@ -71,7 +96,7 @@ pub fn create_read_node(span: Span, mut var: Tnode) -> Result<Tnode, (Option<Spa
 
 pub fn create_write_node(span: Span, e: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
     match e.get_type() {
-        Type::Int | Type::String => {}
+        Type::Int | Type::Str | Type::IntPtr | Type::StrPtr => {}
         _ => return Err((e.get_span(), "Type mismatch, expected integer or string")),
     }
     Ok(Tnode::Write {
@@ -133,17 +158,17 @@ pub fn create_constant_node(
     dtype: Type,
 ) -> Result<Tnode, (Option<Span>, &'static str)> {
     match dtype {
-        Type::Int => match lexer.span_str(token.span()).parse::<u32>() {
+        Type::Int => match lexer.span_str(token.span()).parse::<i32>() {
             Ok(val) => Ok(Tnode::Constant {
                 span: token.span(),
                 dtype: Type::Int,
                 value: val.to_string(),
             }),
-            Err(_) => Err((Some(token.span()), "Can't parse to u32")),
+            Err(_) => Err((Some(token.span()), "Can't parse to i32")),
         },
-        Type::String => Ok(Tnode::Constant {
+        Type::Str => Ok(Tnode::Constant {
             span: token.span(),
-            dtype: Type::String,
+            dtype: Type::Str,
             value: lexer.span_str(token.span()).to_string(),
         }),
         _ => Err((
@@ -163,16 +188,18 @@ pub fn parse_int(
     }
 }
 
-pub fn insert_variables(
+pub fn insert_varlist(
+    mut var_list: LinkedList<SymbolBuilder>,
+    inner_type: Type,
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-    dtype: Type,
-    var_list: LinkedList<(Span, Vec<u32>)>,
 ) -> Result<(), (Option<Span>, &'static str)> {
     let mut s_table = SYMBOL_TABLE.lock().unwrap();
-    for var in var_list.iter() {
-        let name = lexer.span_str(var.0);
-        if let Err(()) = s_table.insert(name.to_string(), dtype, &var.1) {
-            return Err((Some(var.0), "Varible is declared multiple times"));
+    while let Some(mut var) = var_list.pop_front() {
+        var.dtype(inner_type);
+        let span = var.get_name();
+
+        if let Err(()) = s_table.insert(var, lexer) {
+            return Err((Some(span), "Varible is declared multiple times"));
         }
     }
     Ok(())
@@ -192,6 +219,13 @@ pub fn get_variable(
         .ok_or((Some(token.span()), "Varible was not declared"))?
         .clone();
 
+    if entry.get_dim() != access.len() as u16 {
+        return Err((
+            Some(token.span()),
+            "Array access dimension does not match the declared dimension",
+        ));
+    }
+
     Ok(Tnode::Var {
         span: token.span(),
         symbol: entry,
@@ -200,12 +234,14 @@ pub fn get_variable(
     })
 }
 
-pub fn create_access_vec(exp: &[Tnode]) -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)> {
-    for e in exp {
+pub fn check_access_vec(
+    exp: Vec<Box<Tnode>>,
+) -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)> {
+    for e in &exp {
         match e.get_type() {
             Type::Int => {}
             _ => return Err((e.get_span(), "Index should be of type integer")),
         }
     }
-    Ok(exp.iter().map(|e| Box::new(e.clone())).collect())
+    Ok(exp)
 }

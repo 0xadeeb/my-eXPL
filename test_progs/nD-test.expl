@@ -1,0 +1,27 @@
+decl
+	int d[3][4][5][6];
+	int i, j, k, l, m;
+enddecl
+begin
+	i = 0;
+	d[0][0][0][0] = 30;
+	m = d[0][0][0][0];
+	while(i < 3) do
+		j = 0;
+		while (j < 4) do 
+            k = 0;
+            while (k < 5) do
+                l = 0;
+                while(l < 6) do
+                    d[i][j][k][l] = m + i + j + k + l;
+                    l = l + 1;
+                endwhile;
+                k = k + 1;
+            endwhile;
+            j = j + 1;
+        endwhile;
+		i = i + 1;
+	endwhile;
+
+	write(d[2][3][4][5]);
+end

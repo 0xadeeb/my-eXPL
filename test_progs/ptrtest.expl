@@ -1,0 +1,18 @@
+decl
+	int a, *b, *c;
+	str x, *y;
+enddecl
+begin
+	b = &a;
+	c = b;
+	read (a);
+	*c = *b * a;
+	x = "hello";
+    y = &x;
+    *y = x;
+    write(*y);
+	write(a);
+	write(*b);
+    *c = *b + 1;
+	write(*c);
+end

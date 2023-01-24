@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let linker_def = linker_l::lexerdef();
                 let linker_lex = linker_def.lexer(&input);
                 match linker::translate_label(&linker_lex, &linker_def, &output_file) {
-                    Ok(_) => println!("Comipled successfully"),
+                    Ok(_) => println!("Compiled successfully"),
                     e @ Err(_) => return e,
                 }
             }

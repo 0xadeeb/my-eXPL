@@ -55,7 +55,7 @@ fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
                 var @ Symbol::Variable { .. } => {
                     writeln!(fd, "MOV R{}, {}", reg1, var.base_address())?;
                 }
-                arr @ Symbol::Arr { dim, .. } => {
+                arr @ Symbol::Array { dim, .. } => {
                     writeln!(fd, "MOV R{}, {}", reg1, arr.base_address())?;
                     for (i, exp) in access.iter().enumerate() {
                         let reg2 = evaluate(exp, fd)?.unwrap();
@@ -72,21 +72,36 @@ fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
             }
             Ok(Some(reg1))
         }
-        Tnode::Operator { op, lhs, rhs, .. } => {
+        Tnode::DeRefOperator { ref_type, var, .. } => {
+            let reg1 = evaluate(var, fd)?.unwrap();
+            if let RefType::RHS = ref_type {
+                writeln!(fd, "MOV R{}, [R{}]", reg1, reg1)?;
+            }
+            Ok(Some(reg1))
+        }
+        Tnode::RefOperator { var, .. } => {
+            let reg1 = match REGISTERS.lock().unwrap().get_reg() {
+                Some(r) => r,
+                None => return Err(err_from_str("No registers left!")),
+            };
+            writeln!(fd, "MOV R{}, {}", reg1, var.get_address()?)?;
+            Ok(Some(reg1))
+        }
+        Tnode::BinaryOperator { op, lhs, rhs, .. } => {
             let reg1 = evaluate(lhs, fd)?.unwrap();
             let reg2 = evaluate(rhs, fd)?.unwrap();
             match op {
-                Op::Add => writeln!(fd, "ADD R{}, R{}", reg1, reg2)?,
-                Op::Sub => writeln!(fd, "SUB R{}, R{}", reg1, reg2)?,
-                Op::Mult => writeln!(fd, "MUL R{}, R{}", reg1, reg2)?,
-                Op::Div => writeln!(fd, "DIV R{}, R{}", reg1, reg2)?,
-                Op::Mod => writeln!(fd, "MOD R{}, R{}", reg1, reg2)?,
-                Op::EQ => writeln!(fd, "EQ R{}, R{}", reg1, reg2)?,
-                Op::NE => writeln!(fd, "NE R{}, R{}", reg1, reg2)?,
-                Op::GT => writeln!(fd, "GT R{}, R{}", reg1, reg2)?,
-                Op::GE => writeln!(fd, "GE R{}, R{}", reg1, reg2)?,
-                Op::LT => writeln!(fd, "LT R{}, R{}", reg1, reg2)?,
-                Op::LE => writeln!(fd, "LE R{}, R{}", reg1, reg2)?,
+                BinaryOpType::Add => writeln!(fd, "ADD R{}, R{}", reg1, reg2)?,
+                BinaryOpType::Sub => writeln!(fd, "SUB R{}, R{}", reg1, reg2)?,
+                BinaryOpType::Mul => writeln!(fd, "MUL R{}, R{}", reg1, reg2)?,
+                BinaryOpType::Div => writeln!(fd, "DIV R{}, R{}", reg1, reg2)?,
+                BinaryOpType::Mod => writeln!(fd, "MOD R{}, R{}", reg1, reg2)?,
+                BinaryOpType::EQ => writeln!(fd, "EQ R{}, R{}", reg1, reg2)?,
+                BinaryOpType::NE => writeln!(fd, "NE R{}, R{}", reg1, reg2)?,
+                BinaryOpType::GT => writeln!(fd, "GT R{}, R{}", reg1, reg2)?,
+                BinaryOpType::GE => writeln!(fd, "GE R{}, R{}", reg1, reg2)?,
+                BinaryOpType::LT => writeln!(fd, "LT R{}, R{}", reg1, reg2)?,
+                BinaryOpType::LE => writeln!(fd, "LE R{}, R{}", reg1, reg2)?,
             }
             REGISTERS.lock().unwrap().free_reg(reg2);
             Ok(Some(reg1))
@@ -104,9 +119,9 @@ fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
             writeln!(fd, "PUSH R{}", reg2)?;
             writeln!(fd, "MOV R{}, R{}", reg2, reg1)?;
             writeln!(fd, "PUSH R{}", reg2)?;
-            write!(fd, "ADD SP, 2\n")?;
-            write!(fd, "CALL 0\n")?;
-            write!(fd, "SUB SP, 5\n")?;
+            writeln!(fd, "ADD SP, 2")?;
+            writeln!(fd, "CALL 0")?;
+            writeln!(fd, "SUB SP, 5")?;
             REGISTERS.lock().unwrap().free_reg(reg2);
             post_call(fd);
             REGISTERS.lock().unwrap().free_reg(reg1);
@@ -125,9 +140,9 @@ fn evaluate(node: &Tnode, fd: &mut File) -> Result<Option<u8>, Box<dyn Error>> {
             writeln!(fd, "MOV R{}, -2", reg2)?;
             writeln!(fd, "PUSH R{}", reg2)?;
             writeln!(fd, "PUSH R{}", reg1)?;
-            write!(fd, "ADD SP, 2\n")?;
-            write!(fd, "CALL 0\n")?;
-            write!(fd, "SUB SP, 5\n")?;
+            writeln!(fd, "ADD SP, 2")?;
+            writeln!(fd, "CALL 0")?;
+            writeln!(fd, "SUB SP, 5")?;
 
             REGISTERS.lock().unwrap().free_reg(reg2);
             post_call(fd);
@@ -239,10 +254,10 @@ pub fn emit_code(root: &Tnode, file_name: &PathBuf) -> Result<(), Box<dyn Error>
     )?;
     match evaluate(root, &mut fd) {
         Ok(_) => {
-            write!(fd, "MOV R0, 10\n")?;
-            write!(fd, "PUSH R0\n")?;
-            write!(fd, "ADD SP, 4\n")?;
-            write!(fd, "INT 10\n")?;
+            writeln!(fd, "MOV R0, 10")?;
+            writeln!(fd, "PUSH R0")?;
+            writeln!(fd, "ADD SP, 4")?;
+            writeln!(fd, "INT 10")?;
             Ok(())
         }
         Err(e) => {

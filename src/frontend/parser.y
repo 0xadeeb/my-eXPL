@@ -6,18 +6,6 @@
 %avoid_insert "STRING_T"
 %avoid_insert "INT_T"
 
-%epp ADD      "+"
-%epp SUB      "-"
-%epp MULT     "*"
-%epp DIV      "/"
-%epp MOD      "%"
-%epp ASGN     "="
-%epp EQ       "=="
-%epp NE       "!="
-%epp GT       ">"
-%epp LT       "<"
-%epp GE       ">="
-%epp LE       "<="
 %epp BEGIN    "begin"
 %epp END      "end"
 %epp READ     "read"
@@ -41,10 +29,10 @@
 %epp STRING_T "string"
 %epp STRING_C "string_const"
 
-%token "(" ")" "," ";" "[" "]"
-%nonassoc "EQ" "NE" "LT" "GT" "LE" "GE"
-%left "ADD" "SUB"
-%left "MULT" "DIV" "MOD"
+%token "(" ")" "," ";" "[" "]" "&"
+%nonassoc "==" "!=" "<" ">" "<=" ">="
+%left "+" "-"
+%left "*" "/" "%"
 
 %%
 Program -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -63,23 +51,28 @@ DeclList -> Result<(), (Option<Span>, &'static str)>:
     ;
 
 Decl -> Result<(), (Option<Span>, &'static str)>:
-      Type VarList ";"    { insert_variables($lexer, $1?, $2?) }
+      Type VarList ";"    { insert_varlist($2?, $1?, $lexer) }
     ;
 
-VarList -> Result<LinkedList<(Span, Vec<u32>)>, (Option<Span>, &'static str)>:
+VarList -> Result<LinkedList<SymbolBuilder>, (Option<Span>, &'static str)>:
       VarDef "," VarList   { let mut $3 = $3?; $3.push_front($1?); Ok($3) }
     | VarDef               { Ok(LinkedList::from([$1?])) }
     ;
 
-VarDef -> Result<(Span, Vec<u32>), (Option<Span>, &'static str)>:
-      Id                            { Ok(($span, Vec::new())) }
-    | Id "[" Num "]"                { Ok(($1?.span(), Vec::from([parse_int($lexer, &$3?)?]))) }
-    | Id "[" Num "]" "[" Num "]"    { Ok(($1?.span(), Vec::from([parse_int($lexer, &$3?)?, parse_int($lexer, &$6?)?]))) }
+VarDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
+      Id                  { let s = SymbolBuilder::new($1?.span()); Ok(s) }
+    | "*" Id              { let mut s = SymbolBuilder::new($2?.span()); s.ptr(true); Ok(s) }
+    | Id SizeDef          { let mut s = SymbolBuilder::new($1?.span()); s.dim($2?); Ok(s) }
+    ;
+
+SizeDef -> Result<Vec<u16>, (Option<Span>, &'static str)>:
+      SizeDef "[" Num "]"     { let mut $1 = $1?; $1.push(parse_int($lexer, &$3?)? as u16); Ok($1) }
+    | "[" Num "]"             { Ok(Vec::from([parse_int($lexer, &$2?)? as u16])) }
     ;
 
 Type -> Result<Type, (Option<Span>, &'static str)>:
       "INT_T"         { Ok(Type::Int) }
-    | "STRING_T"      { Ok(Type::String) }
+    | "STRING_T"      { Ok(Type::Str) }
     ;
 
 Body -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -117,7 +110,7 @@ RepeatStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 InputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "READ" "(" VarAccess ")" ";"   { create_read_node($span, $3?) }
+      "READ" "(" Var ")" ";"   { create_read_node($span, $3?) }
     ;
 
 OutputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -133,31 +126,41 @@ ContinueStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      VarAccess "ASGN" E ";"   { create_asg_node($span, $1?, $3?) }
+      Var "=" E ";"               { create_asg_node($span, $1?, $3?) }
     ;
 
 E -> Result<Tnode, (Option<Span>, &'static str)>:
-      E "ADD" E     { create_int_node(Op::Add, $span, $1?, $3?) }
-    | E "SUB" E     { create_int_node(Op::Sub, $span, $1?, $3?) }
-    | E "MULT" E    { create_int_node(Op::Mult, $span, $1?, $3?) }
-    | E "DIV" E     { create_int_node(Op::Div, $span, $1?, $3?) }
-    | E "MOD" E     { create_int_node(Op::Mod, $span, $1?, $3?) }
-    | E "EQ" E      { create_bool_node(Op::EQ, $span, $1?, $3?) }
-    | E "NE" E      { create_bool_node(Op::NE, $span, $1?, $3?) }
-    | E "GE" E      { create_bool_node(Op::GE, $span, $1?, $3?) }
-    | E "GT" E      { create_bool_node(Op::GT, $span, $1?, $3?) }
-    | E "LE" E      { create_bool_node(Op::LE, $span, $1?, $3?) }
-    | E "LT" E      { create_bool_node(Op::LT, $span, $1?, $3?) }
-    | "(" E ")"     { $2 }
-    | VarAccess     { $1 }
-    | Num           { create_constant_node($lexer, &$1?, Type::Int) }
-    | String        { create_constant_node($lexer, &$1?, Type::String) }
+      E "+" E         { create_int_node(BinaryOpType::Add, $span, $1?, $3?) }
+    | E "-" E         { create_int_node(BinaryOpType::Sub, $span, $1?, $3?) }
+    | E "*" E         { create_int_node(BinaryOpType::Mul, $span, $1?, $3?) }
+    | E "/" E         { create_int_node(BinaryOpType::Div, $span, $1?, $3?) }
+    | E "%" E         { create_int_node(BinaryOpType::Mod, $span, $1?, $3?) }
+    | E "==" E        { create_bool_node(BinaryOpType::EQ, $span, $1?, $3?) }
+    | E "!=" E        { create_bool_node(BinaryOpType::NE, $span, $1?, $3?) }
+    | E ">=" E        { create_bool_node(BinaryOpType::GE, $span, $1?, $3?) }
+    | E ">" E         { create_bool_node(BinaryOpType::GT, $span, $1?, $3?) }
+    | E "<=" E        { create_bool_node(BinaryOpType::LE, $span, $1?, $3?) }
+    | E "<" E         { create_bool_node(BinaryOpType::LT, $span, $1?, $3?) }
+    | "(" E ")"       { $2 }
+    | Var             { $1 }
+    | "&" VarAccess   { create_ref($span, $2?) }
+    | Num             { create_constant_node($lexer, &$1?, Type::Int) }
+    | String          { create_constant_node($lexer, &$1?, Type::Str) }
+    ;
+
+Var -> Result<Tnode, (Option<Span>, &'static str)>:
+      VarAccess       { $1 }
+    | "*" VarAccess   { create_deref($span, $2?) }
     ;
 
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
       Id                         { get_variable($lexer, &$1?, Vec::new(), RefType::RHS) }
-    | Id "[" E "]"               { get_variable($lexer, &$1?, create_access_vec(&[$3?])?, RefType::RHS) }
-    | Id "[" E "]" "[" E "]"     { get_variable($lexer, &$1?, create_access_vec(&[$3?, $6?])?, RefType::RHS) }
+    | Id ArrayAccess             { get_variable($lexer, &$1?, check_access_vec($2?)?, RefType::RHS) }
+    ;
+
+ArrayAccess -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)>:
+      ArrayAccess "[" E "]"     { let mut $1 = $1?; $1.push(Box::new($3?)); Ok($1) }
+    | "[" E "]"                 { Ok(vec![Box::new($2?)]) }
     ;
 
 Id -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
@@ -183,5 +186,6 @@ Unmatched -> ():
 use lrlex::DefaultLexeme;
 use lrpar::Span;
 use myexpl::ast::*;
+use myexpl::symbol_table::*;
 use myexpl::utils::node::*;
 use std::collections::LinkedList;
