@@ -1,9 +1,13 @@
 decl
     int a, b, c;
 enddecl
+int main() {
+decl
+    int a, b, c;
+enddecl
 begin
-    read(a);
     read(b);
+    read(a);
     read(c);
     if (a < b) then
         if (b < c) then 
@@ -19,3 +23,5 @@ begin
         endif;
     endif;
 end
+    return 0;
+}

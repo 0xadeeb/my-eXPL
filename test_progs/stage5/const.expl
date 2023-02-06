@@ -1,0 +1,32 @@
+decl
+ int fun(int x),a;
+enddecl
+
+int fun(int x)
+{
+ begin
+  if(x >= 91) then
+   a = 91;
+  else
+   a = fun(fun(fun(fun(fun(x+11)))));
+  endif;
+
+ end
+  return a;
+}
+
+int main()
+{
+ decl
+  int b,c;
+ enddecl
+
+ begin
+  read(b);
+  c = fun(b);
+  write(c);
+
+ end
+  return 0;
+}
+

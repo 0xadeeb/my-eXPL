@@ -1,6 +1,20 @@
 decl
-   int n,arr[50],i,j,dup;
+   int n,arr[50],i,j,dup, bubbleSort(int x, int y);
 enddecl
+
+int bubbleSort(int x, int y) {
+decl
+enddecl
+begin
+    n = 4;
+    n = 1;
+    n = 11;
+    i = n + j;
+    dup = i;
+end
+}
+
+int main () {
 begin
     read(n);
     i=0;
@@ -28,3 +42,4 @@ begin
         i = i+1;
     endwhile;
 end
+}

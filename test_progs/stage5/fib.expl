@@ -1,0 +1,34 @@
+decl
+    int n,fibo(int n, int* result);
+enddecl
+
+int fibo(int n, int* result){
+    decl
+        int res;
+    enddecl
+    begin
+        if(n==0)then
+            res=0;
+        else
+            if(n==1)then
+                res=1;
+            else
+                res=fibo(n-1, result)+fibo(n-2, result);
+            endif;
+        endif;
+        *result = res;
+    end
+        return res;
+}
+int main(){
+    decl
+        int result, j;
+    enddecl
+    begin
+        read(n);
+        j = fibo(n, &result);
+        write(result);
+    end
+        return 0;
+}
+

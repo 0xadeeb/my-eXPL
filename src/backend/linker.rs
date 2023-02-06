@@ -13,8 +13,8 @@ pub fn translate_label(
         .write(true)
         .open(file_name)?;
 
-    let mut map: HashMap<String, u16> = HashMap::new();
-    let mut line_number: u16 = 1;
+    let mut map: HashMap<String, i16> = HashMap::new();
+    let mut line_number: i16 = 1;
 
     for pass in 1..=2 {
         for l in lexer.iter() {

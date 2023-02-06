@@ -1,5 +1,5 @@
 %%
-L\d+:       "LABEL_DEF"
-<L\d+>      "LABEL"
-\n          "NEWLINE"
-.           "ANY"
+[LF]\d+:       "LABEL_DEF"
+<[LF]\d+>      "LABEL"
+\n             "NEWLINE"
+.              "ANY"

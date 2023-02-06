@@ -1,12 +1,14 @@
+use frontend::parser_state::ParserState;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
-use symbol_table::SymbolTable;
 
 lazy_static! {
-    pub static ref SYMBOL_TABLE: Mutex<SymbolTable> = Mutex::new(SymbolTable::default());
+    pub static ref PARSER: Mutex<ParserState> = Mutex::new(ParserState::default());
 }
 
 pub mod ast;
 pub mod backend;
-pub mod symbol_table;
+pub mod frontend;
+pub mod symbol;
+pub mod type_table;
 pub mod utils;

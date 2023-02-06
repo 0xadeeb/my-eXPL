@@ -1,6 +1,9 @@
 use lrlex::lrlex_mod;
 use lrpar::{lrpar_mod, NonStreamingLexer};
-use myexpl::backend::{code_gen, linker};
+use myexpl::{
+    backend::{code_gen::CodeGen, linker},
+    PARSER,
+};
 use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 
 // Using `lrlex_mod!` brings the lexer for `lexer.l` into scope. By default the
@@ -47,8 +50,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     let obj_file = input_file.with_extension("obj");
+    let mut code_generator = CodeGen::new(&obj_file, PARSER.lock().unwrap().gst().get_size())?;
     match res {
-        Some(Ok(root)) => match code_gen::emit_code(&root, &obj_file) {
+        Some(Ok(fns)) => match code_generator.emit_code(&fns) {
             Ok(_) => {
                 let output_file = input_file.with_extension("xsm");
                 let input = get_input(&obj_file)?;

@@ -1,6 +1,29 @@
-use crate::symbol_table::*;
+use crate::symbol::*;
+use crate::type_table::*;
 use lrpar::Span;
+use std::collections::LinkedList;
 use std::error::Error;
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOpType {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    EQ,
+    NE,
+    GT,
+    GE,
+    LT,
+    LE,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RefType {
+    RHS,
+    LHS,
+}
 
 #[derive(Debug, Clone)]
 pub enum Tnode {
@@ -62,15 +85,24 @@ pub enum Tnode {
         stmts: Box<Tnode>,
         condition: Box<Tnode>,
     },
+    FnCall {
+        span: Span,
+        symbol: Symbol,
+        args: LinkedList<Box<Tnode>>,
+    },
+    Return {
+        span: Span,
+        exp: Box<Tnode>,
+    },
     Continue,
     Break,
     Empty,
 }
 
 impl Tnode {
-    pub fn get_address(&self) -> Result<u16, Box<dyn Error>> {
+    pub fn get_address(&self) -> Result<i16, Box<dyn Error>> {
         match self {
-            Tnode::Var { symbol, .. } => Ok(symbol.base_address()),
+            Tnode::Var { symbol, .. } => Ok(symbol.get_address()),
             _ => Err(Box::<dyn Error>::from(
                 "LHS of assign statment not variable",
             )),
@@ -80,10 +112,12 @@ impl Tnode {
     pub fn get_type(&self) -> Type {
         match self {
             Tnode::Var { symbol, .. } => symbol.get_type(),
+            Tnode::FnCall { symbol, .. } => symbol.get_type(),
             Tnode::BinaryOperator { dtype, .. }
             | Tnode::Constant { dtype, .. }
             | Tnode::DeRefOperator { dtype, .. }
             | Tnode::RefOperator { dtype, .. } => dtype.clone(),
+            Tnode::Return { exp, .. } => exp.get_type(),
             _ => Type::Void,
         }
     }
@@ -113,93 +147,35 @@ impl Tnode {
             _ => Err("Not a variable"),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum BinaryOpType {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    EQ,
-    NE,
-    GT,
-    GE,
-    LT,
-    LE,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
-    Void,
-    Int,
-    Bool,
-    Str,
-    IntPtr,
-    StrPtr,
-}
-
-impl Type {
-    pub fn rref(&self) -> Result<Self, &'static str> {
+    pub fn is_local(&self) -> Result<bool, &'static str> {
         match self {
-            Type::Int => Ok(Type::IntPtr),
-            Type::Str => Ok(Type::StrPtr),
-            _ => Err("Referencing not defined for this variable type"),
-        }
-    }
-    pub fn deref(&self) -> Result<Self, &'static str> {
-        match self {
-            Type::IntPtr => Ok(Type::Int),
-            Type::StrPtr => Ok(Type::Str),
-            _ => Err("Dereferencing not defined for this variable type"),
+            Tnode::Var { symbol, .. } => Ok(symbol.is_local()),
+            _ => Err("Node not variable"),
         }
     }
 }
 
-pub struct TypeBuilder {
-    is_pointer: bool,
-    dtype: Option<Type>,
+pub struct FnAst {
+    root: Tnode,
+    label: i16,
+    lvar_count: i16,
 }
 
-impl TypeBuilder {
-    pub fn new() -> Self {
-        TypeBuilder {
-            is_pointer: false,
-            dtype: None,
+impl FnAst {
+    pub fn new(root: Tnode, label: i16, lvar_count: i16) -> Self {
+        Self {
+            root,
+            label,
+            lvar_count,
         }
     }
-
-    pub fn set_pointer(&mut self, is_pointer: bool) -> &mut Self {
-        self.is_pointer = is_pointer;
-        self
+    pub fn get_label(&self) -> i16 {
+        self.label
     }
-
-    pub fn dtype(&mut self, inner_type: Type) -> &mut Self {
-        self.dtype = Some(inner_type);
-        self
+    pub fn get_root(&self) -> &Tnode {
+        &self.root
     }
-
-    pub fn build(self) -> Result<Type, &'static str> {
-        if self.is_pointer {
-            match self.dtype {
-                Some(Type::Int) => Ok(Type::IntPtr),
-                Some(Type::Str) => Ok(Type::StrPtr),
-                _ => Err("Pointer type only defined for int and string"),
-            }
-        } else {
-            match self.dtype {
-                Some(Type::Int) => Ok(Type::Int),
-                Some(Type::Str) => Ok(Type::Str),
-                Some(_) => Err("Variable can be only of int or string type"),
-                _ => Err("Inner type must be defined"),
-            }
-        }
+    pub fn get_lvar_count(&self) -> i16 {
+        self.lvar_count
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum RefType {
-    RHS,
-    LHS,
 }
