@@ -100,14 +100,15 @@ impl CodeGen {
                 Ok(Some(reg1))
             }
             Tnode::RefOperator { var, .. } => {
-                let reg1 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
-                writeln!(self.fd, "MOV R{}, {}", reg1, var.get_address()?)?;
-                if var.is_local().unwrap() {
-                    writeln!(self.fd, "ADD R{}, BP", reg1)?;
-                }
+                // let reg1 = self
+                //     .registers
+                //     .get_reg()
+                //     .ok_or(err_from_str("No registers left!"))?;
+                // writeln!(self.fd, "MOV R{}, {}", reg1, var.get_address()?)?;
+                // if var.is_local().unwrap() {
+                //     writeln!(self.fd, "ADD R{}, BP", reg1)?;
+                // }
+                let reg1 = self.evaluate(var)?.unwrap();
                 Ok(Some(reg1))
             }
             Tnode::BinaryOperator { op, lhs, rhs, .. } => {
@@ -299,7 +300,6 @@ impl CodeGen {
         writeln!(self.fd, "INT 10")?;
         for fn_def in fns.iter() {
             write!(self.fd, "F{}:", fn_def.get_label())?;
-            writeln!(self.fd, "BRKP")?;
             writeln!(self.fd, "PUSH BP")?;
             writeln!(self.fd, "MOV BP, SP")?;
             writeln!(self.fd, "ADD SP, {}", fn_def.get_lvar_count())?;

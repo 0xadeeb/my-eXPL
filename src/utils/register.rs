@@ -7,14 +7,14 @@ enum RegState {
 
 #[derive(Debug)]
 pub struct RegisterPool {
-    available: [RegState; 20],
+    state: [RegState; 20],
     stored: Vec<[RegState; 20]>,
 }
 
 impl Default for RegisterPool {
     fn default() -> Self {
         Self {
-            available: [RegState::Free; 20],
+            state: [RegState::Free; 20],
             stored: Vec::new(),
         }
     }
@@ -22,7 +22,7 @@ impl Default for RegisterPool {
 
 impl RegisterPool {
     fn get(&mut self, state: RegState) -> Option<u8> {
-        self.available
+        self.state
             .iter_mut()
             .enumerate()
             .find(|(_, &mut v)| v == RegState::Free)
@@ -42,13 +42,13 @@ impl RegisterPool {
 
     pub fn free_reg(&mut self, reg: u8) {
         if reg < 20 {
-            self.available[reg as usize] = RegState::Free;
+            self.state[reg as usize] = RegState::Free;
         }
     }
 
     pub fn save_context<'t>(&'t mut self) -> impl Iterator<Item = u8> + DoubleEndedIterator + 't {
-        self.stored.push(self.available);
-        self.available
+        self.stored.push(self.state);
+        self.state
             .iter()
             .enumerate()
             .filter(|(_, &v)| v == RegState::Acquired)
@@ -69,12 +69,12 @@ impl RegisterPool {
             .map(|(i, _)| i as u8);
 
         for i in 0..20 {
-            if self.available[i] == RegState::RetAcquired {
+            if self.state[i] == RegState::RetAcquired {
                 self.stored.last_mut().unwrap()[i] = RegState::Acquired;
             }
         }
 
-        self.available = self.stored.pop().unwrap();
+        self.state = self.stored.pop().unwrap();
         it
     }
 }

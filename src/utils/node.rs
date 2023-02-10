@@ -60,9 +60,11 @@ pub fn create_asg_node(
     })
 }
 
-pub fn create_ref(span: Span, exp: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+pub fn create_ref(span: Span, mut exp: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
     match exp {
-        Tnode::Var { .. } => {}
+        Tnode::Var { .. } => {
+            exp.set_ref(RefType::LHS).unwrap();
+        }
         _ => return Err((Some(span), "Referencing just defined for variables")),
     }
     Ok(Tnode::RefOperator {

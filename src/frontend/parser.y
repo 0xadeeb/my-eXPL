@@ -89,6 +89,7 @@ FDefBlock -> Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
 
 FDef -> Result<FnAst, (Option<Span>, &'static str)>:
       FType FName "(" Params ")" "{" LDeclaration Body ReturnStmt "}"    {
+        $2?; $4?; $7?;
         create_fn(
           $1?, $8?, $9?,
           Span::new($span.start(), $5.unwrap().span().end())
@@ -158,6 +159,7 @@ Param -> Result<(Type, String), (Option<Span>, &'static str)>:
 
 MainFn -> Result<FnAst, (Option<Span>, &'static str)>:
       FType Main "(" ")" "{" LDeclaration Body ReturnStmt "}"   {
+        $2?; $6?;
         create_main_block(
           $1?, $7?, $8?,
           Span::new($span.start(), $4.unwrap().span().end())
