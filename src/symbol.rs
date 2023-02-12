@@ -1,7 +1,7 @@
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 
-use crate::{type_table::*, PARSER};
+use crate::{frontend::PARSER, type_table::*};
 use std::collections::{HashMap, LinkedList};
 
 pub struct SymbolTable {

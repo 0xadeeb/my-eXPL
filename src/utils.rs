@@ -2,7 +2,6 @@ use std::error::Error;
 
 pub mod label;
 pub mod loop_util;
-pub mod node;
 pub mod register;
 
 pub fn err_from_str(e: &str) -> Box<dyn Error> {

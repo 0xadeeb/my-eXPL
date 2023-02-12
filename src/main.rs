@@ -1,9 +1,6 @@
 use lrlex::lrlex_mod;
 use lrpar::{lrpar_mod, NonStreamingLexer};
-use myexpl::{
-    backend::{code_gen::CodeGen, linker},
-    PARSER,
-};
+use myexpl::backend::{code_gen::CodeGen, linker};
 use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 
 // Using `lrlex_mod!` brings the lexer for `lexer.l` into scope. By default the
@@ -50,21 +47,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
     let obj_file = input_file.with_extension("obj");
-    let mut code_generator = CodeGen::new(&obj_file, PARSER.lock().unwrap().gst().get_size())?;
     match res {
-        Some(Ok(fns)) => match code_generator.emit_code(&fns) {
-            Ok(_) => {
-                let output_file = input_file.with_extension("xsm");
-                let input = get_input(&obj_file)?;
-                let linker_def = linker_l::lexerdef();
-                let linker_lex = linker_def.lexer(&input);
-                match linker::translate_label(&linker_lex, &linker_def, &output_file) {
-                    Ok(_) => println!("Compiled successfully"),
-                    e @ Err(_) => return e,
+        Some(Ok((fns, gst_size))) => {
+            let mut code_generator = CodeGen::new(&obj_file)?;
+            match code_generator.emit_code(&fns, gst_size) {
+                Ok(()) => {
+                    let output_file = input_file.with_extension("xsm");
+                    let input = get_input(&obj_file)?;
+                    let linker_def = linker_l::lexerdef();
+                    let linker_lex = linker_def.lexer(&input);
+                    match linker::translate_label(&linker_lex, &linker_def, &output_file) {
+                        Ok(_) => println!("Compiled successfully"),
+                        e @ Err(_) => return e,
+                    }
                 }
+                e @ Err(_) => return e,
             }
-            e @ Err(_) => return e,
-        },
+        }
         Some(Err((s, msg))) => match s {
             Some(span) => {
                 let ((line, col), _) = lexer.line_col(span);

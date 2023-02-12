@@ -16,11 +16,10 @@ pub struct CodeGen {
     labels: LabelGenerator,
     lp: LoopStack,
     fd: File,
-    gst_size: i16,
 }
 
 impl CodeGen {
-    pub fn new(file_name: &PathBuf, gst: i16) -> Result<CodeGen, Box<dyn Error>> {
+    pub fn new(file_name: &PathBuf) -> Result<CodeGen, Box<dyn Error>> {
         let fd = OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -31,7 +30,6 @@ impl CodeGen {
             labels: LabelGenerator::default(),
             lp: LoopStack::default(),
             fd,
-            gst_size: gst,
         })
     }
 
@@ -285,13 +283,17 @@ impl CodeGen {
         }
     }
 
-    pub fn emit_code(&mut self, fns: &LinkedList<FnAst>) -> Result<(), Box<dyn Error>> {
+    pub fn emit_code(
+        &mut self,
+        fns: &LinkedList<FnAst>,
+        gst_size: i16,
+    ) -> Result<(), Box<dyn Error>> {
         write!(
             self.fd,
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             0, 2056, 0, 0, 0, 0, 0, 0
         )?;
-        writeln!(self.fd, "MOV SP, {}", 4098 + self.gst_size)?;
+        writeln!(self.fd, "MOV SP, {}", 4098 + gst_size)?;
         writeln!(self.fd, "MOV BP, SP")?;
         writeln!(self.fd, "CALL <F0>")?;
         writeln!(self.fd, "MOV R0, 10")?;

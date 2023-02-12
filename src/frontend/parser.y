@@ -37,9 +37,9 @@
 %left "*" "/" "%"
 
 %%
-Program -> Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
-      GDeclaration FDefBlock MainFn    { $1?; let mut $2 = $2?; $2.push_back($3?); Ok($2) }
-    | GDeclaration MainFn              { $1?; Ok(LinkedList::from([$2?])) }
+Program -> Result<(LinkedList<FnAst>, i16), (Option<Span>, &'static str)>:
+      GDeclaration FDefBlock MainFn    { $1?; let mut $2 = $2?; $2.push_back($3?); Ok(($2, PARSER.lock().unwrap().gst().get_size())) }
+    | GDeclaration MainFn              { $1?; Ok((LinkedList::from([$2?]), PARSER.lock().unwrap().gst().get_size())) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
@@ -90,7 +90,7 @@ FDefBlock -> Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
 FDef -> Result<FnAst, (Option<Span>, &'static str)>:
       FType FName "(" Params ")" "{" LDeclaration Body ReturnStmt "}"    {
         $2?; $4?; $7?;
-        create_fn(
+        Tnode::create_fn(
           $1?, $8?, $9?,
           Span::new($span.start(), $5.unwrap().span().end())
         )
@@ -160,7 +160,7 @@ Param -> Result<(Type, String), (Option<Span>, &'static str)>:
 MainFn -> Result<FnAst, (Option<Span>, &'static str)>:
       FType Main "(" ")" "{" LDeclaration Body ReturnStmt "}"   {
         $2?; $6?;
-        create_main_block(
+        Tnode::create_main_block(
           $1?, $7?, $8?,
           Span::new($span.start(), $4.unwrap().span().end())
         )
@@ -189,24 +189,24 @@ Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 IfStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"               { create_if_node($span, $3?, $6?, None) }
-    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"  { create_if_node($span, $3?, $6?, Some($8?)) }
+      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"               { Tnode::create_if($span, $3?, $6?, None) }
+    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"  { Tnode::create_if($span, $3?, $6?, Some($8?)) }
     ;
 
 WhileStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"      { create_while_node($span, $3?, $6?) }
+      "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"      { Tnode::create_while($span, $3?, $6?) }
     ;
 
 RepeatStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { create_repeat_node($span, $3?, $6?) }
+      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { Tnode::create_repeat($span, $3?, $6?) }
     ;
 
 InputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "READ" "(" Var ")" ";"   { create_read_node($span, $3?) }
+      "READ" "(" Var ")" ";"   { Tnode::create_read($span, $3?) }
     ;
 
 OutputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WRITE" "(" E ")" ";"    { create_write_node($span, $3?) }
+      "WRITE" "(" E ")" ";"    { Tnode::create_write($span, $3?) }
     ;
 
 BreakStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -222,27 +222,27 @@ ReturnStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Var "=" E ";"     { create_asg_node($span, $1?, $3?) }
+      Var "=" E ";"     { Tnode::create_asg($span, $1?, $3?) }
     ;
 
 E -> Result<Tnode, (Option<Span>, &'static str)>:
-      E "+" E                 { create_int_node(BinaryOpType::Add, $span, $1?, $3?) }
-    | E "-" E                 { create_int_node(BinaryOpType::Sub, $span, $1?, $3?) }
-    | E "*" E                 { create_int_node(BinaryOpType::Mul, $span, $1?, $3?) }
-    | E "/" E                 { create_int_node(BinaryOpType::Div, $span, $1?, $3?) }
-    | E "%" E                 { create_int_node(BinaryOpType::Mod, $span, $1?, $3?) }
-    | E "==" E                { create_bool_node(BinaryOpType::EQ, $span, $1?, $3?) }
-    | E "!=" E                { create_bool_node(BinaryOpType::NE, $span, $1?, $3?) }
-    | E ">=" E                { create_bool_node(BinaryOpType::GE, $span, $1?, $3?) }
-    | E ">" E                 { create_bool_node(BinaryOpType::GT, $span, $1?, $3?) }
-    | E "<=" E                { create_bool_node(BinaryOpType::LE, $span, $1?, $3?) }
-    | E "<" E                 { create_bool_node(BinaryOpType::LT, $span, $1?, $3?) }
+      E "+" E                 { Tnode::create_int(BinaryOpType::Add, $span, $1?, $3?) }
+    | E "-" E                 { Tnode::create_int(BinaryOpType::Sub, $span, $1?, $3?) }
+    | E "*" E                 { Tnode::create_int(BinaryOpType::Mul, $span, $1?, $3?) }
+    | E "/" E                 { Tnode::create_int(BinaryOpType::Div, $span, $1?, $3?) }
+    | E "%" E                 { Tnode::create_int(BinaryOpType::Mod, $span, $1?, $3?) }
+    | E "==" E                { Tnode::create_bool(BinaryOpType::EQ, $span, $1?, $3?) }
+    | E "!=" E                { Tnode::create_bool(BinaryOpType::NE, $span, $1?, $3?) }
+    | E ">=" E                { Tnode::create_bool(BinaryOpType::GE, $span, $1?, $3?) }
+    | E ">" E                 { Tnode::create_bool(BinaryOpType::GT, $span, $1?, $3?) }
+    | E "<=" E                { Tnode::create_bool(BinaryOpType::LE, $span, $1?, $3?) }
+    | E "<" E                 { Tnode::create_bool(BinaryOpType::LT, $span, $1?, $3?) }
     | "(" E ")"               { $2 }
     | Var                     { $1 }
-    | "&" VarAccess           { create_ref($span, $2?) }
-    | Num                     { create_constant_node($lexer, &$1?, Type::Int) }
-    | String                  { create_constant_node($lexer, &$1?, Type::Str) }
-    | Id "(" ArgList ")"      { fn_call_node($lexer.span_str($1?.span()), $3?, $span) }
+    | "&" VarAccess           { Tnode::create_ref($span, $2?) }
+    | Num                     { Tnode::create_constant($lexer, &$1?, Type::Int) }
+    | String                  { Tnode::create_constant($lexer, &$1?, Type::Str) }
+    | Id "(" ArgList ")"      { Tnode::create_fncall($lexer.span_str($1?.span()), $3?, $span) }
     ;
 
 ArgList -> Result<LinkedList<Tnode>, (Option<Span>, &'static str)>:
@@ -253,7 +253,7 @@ ArgList -> Result<LinkedList<Tnode>, (Option<Span>, &'static str)>:
 
 Var -> Result<Tnode, (Option<Span>, &'static str)>:
       VarAccess       { $1 }
-    | "*" VarAccess   { create_deref($span, $2?) }
+    | "*" VarAccess   { Tnode::create_deref($span, $2?) }
     ;
 
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
@@ -296,8 +296,8 @@ Unmatched -> ():
 use lrlex::DefaultLexeme;
 use lrpar::Span;
 use myexpl::ast::*;
-use myexpl::PARSER;
+use myexpl::frontend::methods::*;
+use myexpl::frontend::PARSER;
 use myexpl::type_table::*;
 use myexpl::symbol::*;
-use myexpl::utils::node::*;
 use std::collections::LinkedList;
