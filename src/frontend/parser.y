@@ -32,21 +32,23 @@
 %epp STRING_C "string_const"
 
 %token "(" ")" "," ";" "[" "]" "&" "{" "}"
-%nonassoc "==" "!=" "<" ">" "<=" ">="
+%left "&&" "||"
+%left "==" "!="
+%left "<" ">" "<=" ">="
 %left "+" "-"
 %left "*" "/" "%"
 
 %%
 Program -> Result<(LinkedList<FnAst>, i16), (Option<Span>, &'static str)>:
-      GDeclaration FDefBlock MainFn    { $1?; let mut $2 = $2?; $2.push_back($3?); Ok(($2, PARSER.lock().unwrap().gst().get_size())) }
-    | GDeclaration MainFn              { $1?; Ok((LinkedList::from([$2?]), PARSER.lock().unwrap().gst().get_size())) }
+      GDeclaration FDefBlock MainFn    { let mut $2 = $2?; $2.push_back($3?); Ok(($2, $1?)) }
+    | GDeclaration MainFn              { Ok((LinkedList::from([$2?]), $1?)) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
-GDeclaration -> Result<(), (Option<Span>, &'static str)>:
-      "DECL" GDeclList "ENDDECL"  { $2 }
-    | "DECL" "ENDDECL"            { Ok(()) }
-    | /* Empty */                 { Ok(()) }
+GDeclaration -> Result<i16, (Option<Span>, &'static str)>:
+      "DECL" GDeclList "ENDDECL"  { $2?; Ok(PARSER.lock().unwrap().gst().get_size()) }
+    | "DECL" "ENDDECL"            { Ok(0) }
+    | /* Empty */                 { Ok(0) }
     ;
 
 GDeclList -> Result<(), (Option<Span>, &'static str)>:
@@ -237,6 +239,8 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | E ">" E                 { Tnode::create_bool(BinaryOpType::GT, $span, $1?, $3?) }
     | E "<=" E                { Tnode::create_bool(BinaryOpType::LE, $span, $1?, $3?) }
     | E "<" E                 { Tnode::create_bool(BinaryOpType::LT, $span, $1?, $3?) }
+    | E "&&" E                { Tnode::create_logical_op(BinaryOpType::AND, $span, $1?, $3?) }
+    | E "||" E                { Tnode::create_logical_op(BinaryOpType::OR, $span, $1?, $3?) }
     | "(" E ")"               { $2 }
     | Var                     { $1 }
     | "&" VarAccess           { Tnode::create_ref($span, $2?) }

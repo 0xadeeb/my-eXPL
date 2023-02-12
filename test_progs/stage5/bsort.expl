@@ -9,17 +9,15 @@ int BubbleSort(int first, int last)
   enddecl
 
   begin
-    if((first < last) ) then
-        if((last > 0)) then
-          if(arr[first] > arr[first+1]) then
-            temp = arr[first];
-            arr[first] = arr[first+1];
-            arr[first+1] = temp;
-          endif;
+    if((first < last) && (last > 0)) then
+      if(arr[first] > arr[first+1]) then
+        temp = arr[first];
+        arr[first] = arr[first+1];
+        arr[first+1] = temp;
+      endif;
 
-          dup = BubbleSort(first+1, last);
-          dup = BubbleSort(first, last-1);
-        endif;
+      dup = BubbleSort(first+1, last);
+      dup = BubbleSort(first, last-1);
     endif;
 
   end

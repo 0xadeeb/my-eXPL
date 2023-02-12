@@ -98,14 +98,6 @@ impl CodeGen {
                 Ok(Some(reg1))
             }
             Tnode::RefOperator { var, .. } => {
-                // let reg1 = self
-                //     .registers
-                //     .get_reg()
-                //     .ok_or(err_from_str("No registers left!"))?;
-                // writeln!(self.fd, "MOV R{}, {}", reg1, var.get_address()?)?;
-                // if var.is_local().unwrap() {
-                //     writeln!(self.fd, "ADD R{}, BP", reg1)?;
-                // }
                 let reg1 = self.evaluate(var)?.unwrap();
                 Ok(Some(reg1))
             }
@@ -124,6 +116,26 @@ impl CodeGen {
                     BinaryOpType::GE => writeln!(self.fd, "GE R{}, R{}", reg1, reg2)?,
                     BinaryOpType::LT => writeln!(self.fd, "LT R{}, R{}", reg1, reg2)?,
                     BinaryOpType::LE => writeln!(self.fd, "LE R{}, R{}", reg1, reg2)?,
+                    BinaryOpType::AND => {
+                        let label1 = self.labels.get();
+                        let label2 = self.labels.get();
+                        writeln!(self.fd, "JZ R{}, <L{}>", reg1, label1)?;
+                        writeln!(self.fd, "JZ R{}, <L{}>", reg2, label1)?;
+                        writeln!(self.fd, "JMP <L{}>", label2)?;
+                        write!(self.fd, "L{}:", label1)?;
+                        writeln!(self.fd, "MOV R{}, 0", reg1)?;
+                        write!(self.fd, "L{}:", label2)?;
+                    }
+                    BinaryOpType::OR => {
+                        let label1 = self.labels.get();
+                        let label2 = self.labels.get();
+                        writeln!(self.fd, "JNZ R{}, <L{}>", reg1, label1)?;
+                        writeln!(self.fd, "JNZ R{}, <L{}>", reg2, label1)?;
+                        writeln!(self.fd, "JMP <L{}>", label2)?;
+                        write!(self.fd, "L{}:", label1)?;
+                        writeln!(self.fd, "MOV R{}, 1", reg1)?;
+                        write!(self.fd, "L{}:", label2)?;
+                    }
                 }
                 self.registers.free_reg(reg2);
                 Ok(Some(reg1))

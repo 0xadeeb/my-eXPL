@@ -16,6 +16,8 @@ pub enum BinaryOpType {
     GE,
     LT,
     LE,
+    AND,
+    OR,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -182,6 +184,25 @@ impl Tnode {
         match (left.get_type(), right.get_type()) {
             (Type::Int, Type::Int) | (Type::Str, Type::Str) => {}
             _ => return Err((Some(span), "Type mismatch, expected integer")),
+        }
+        Ok(Tnode::BinaryOperator {
+            op,
+            span,
+            dtype: Type::Bool,
+            lhs: Box::new(left),
+            rhs: Box::new(right),
+        })
+    }
+
+    pub fn create_logical_op(
+        op: BinaryOpType,
+        span: Span,
+        left: Tnode,
+        right: Tnode,
+    ) -> Result<Tnode, (Option<Span>, &'static str)> {
+        match (left.get_type(), right.get_type()) {
+            (Type::Bool, Type::Bool) => {}
+            _ => return Err((Some(span), "Type mismatch, expected boolean")),
         }
         Ok(Tnode::BinaryOperator {
             op,
