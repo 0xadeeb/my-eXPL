@@ -1,22 +1,29 @@
-use std::collections::LinkedList;
+use std::collections::{HashMap, LinkedList};
 use std::default::Default;
 
 use crate::symbol::{Symbol, SymbolTable};
-use crate::type_table::Type;
+use crate::type_table::{PrimitiveType, Type};
 use crate::utils::label::LabelGenerator;
 
 pub struct ParserState {
     gst: SymbolTable,
     lst: SymbolTable,
     label: LabelGenerator,
+    tt: HashMap<String, Type>,
     cfn: Option<Symbol>,
 }
 
 impl Default for ParserState {
     fn default() -> Self {
+        let mut tt = HashMap::new();
+        tt.insert("int".to_string(), Type::Primitive(PrimitiveType::Int));
+        tt.insert("str".to_string(), Type::Primitive(PrimitiveType::Str));
+        tt.insert("bool".to_string(), Type::Primitive(PrimitiveType::Bool));
+        tt.insert("Void".to_string(), Type::Primitive(PrimitiveType::Void));
         ParserState {
             gst: SymbolTable::default(),
             lst: SymbolTable::default(),
+            tt,
             label: LabelGenerator::default(),
             cfn: None,
         }
@@ -39,7 +46,7 @@ impl ParserState {
     pub fn cfn_rtype(&self) -> Type {
         match self.cfn {
             Some(ref s) => s.get_type(),
-            None => Type::Int,
+            None => Type::Primitive(PrimitiveType::Int),
         }
     }
 

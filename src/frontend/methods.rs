@@ -21,7 +21,7 @@ fn insert(
     base: i16,
 ) -> Result<(), (Option<Span>, &'static str)> {
     while let Some(mut var) = var_list.pop_front() {
-        var.dtype(inner_type);
+        var.dtype(inner_type.clone());
         let span = var.get_name();
 
         s_table
@@ -82,7 +82,7 @@ pub fn check_access_vec(
 ) -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)> {
     for e in &exp {
         match e.get_type() {
-            Type::Int => {}
+            Type::Primitive(PrimitiveType::Int) => {}
             _ => return Err((e.get_span(), "Index should be of type integer")),
         }
     }
@@ -107,7 +107,7 @@ pub fn insert_args(
                     .insert_arg(Symbol::Variable {
                         name: n1.to_string(),
                         binding: -1 * counter,
-                        dtype: *t1,
+                        dtype: t1.clone(),
                         is_static: false,
                     })
                     .map_err(|msg| (Some(span), msg))?;

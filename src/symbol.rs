@@ -163,8 +163,8 @@ impl SymbolBuilder {
         self
     }
 
-    pub fn ptr(&mut self, ptr: bool) -> &mut SymbolBuilder {
-        self.dtype.set_pointer(ptr);
+    pub fn ptr(&mut self) -> &mut SymbolBuilder {
+        self.dtype.set_pointer();
         self
     }
 

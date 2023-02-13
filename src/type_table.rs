@@ -1,45 +1,50 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
+pub enum PrimitiveType {
     Void,
     Int,
     Bool,
     Str,
-    IntPtr,
-    StrPtr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    Primitive(PrimitiveType),
+    UserDef {
+        size: i16,
+        field_list: HashMap<String, Box<Type>>, // map(variable name -> type)
+    },
+    Pointer(Box<Type>),
 }
 
 impl Type {
-    pub fn rref(&self) -> Result<Self, &'static str> {
+    pub fn deref(&self) -> Result<Self, &'static str> {
         match self {
-            Type::Int => Ok(Type::IntPtr),
-            Type::Str => Ok(Type::StrPtr),
+            Self::Pointer(t) => Ok(*t.clone()),
             _ => Err("Referencing not defined for this variable type"),
         }
     }
-    pub fn deref(&self) -> Result<Self, &'static str> {
-        match self {
-            Type::IntPtr => Ok(Type::Int),
-            Type::StrPtr => Ok(Type::Str),
-            _ => Err("Dereferencing not defined for this variable type"),
-        }
+    pub fn rref(&self) -> Result<Self, &'static str> {
+        Ok(Type::Pointer(Box::new(self.clone())))
     }
 }
 
 pub struct TypeBuilder {
-    is_pointer: bool,
+    pointer: u16,
     dtype: Option<Type>,
 }
 
 impl TypeBuilder {
     pub fn new() -> Self {
         TypeBuilder {
-            is_pointer: false,
+            pointer: 0,
             dtype: None,
         }
     }
 
-    pub fn set_pointer(&mut self, is_pointer: bool) -> &mut Self {
-        self.is_pointer = is_pointer;
+    pub fn set_pointer(&mut self) -> &mut Self {
+        self.pointer += 1;
         self
     }
 
@@ -49,19 +54,11 @@ impl TypeBuilder {
     }
 
     pub fn build(self) -> Result<Type, &'static str> {
-        if self.is_pointer {
-            match self.dtype {
-                Some(Type::Int) => Ok(Type::IntPtr),
-                Some(Type::Str) => Ok(Type::StrPtr),
-                _ => Err("Pointer type only defined for int and string"),
-            }
-        } else {
-            match self.dtype {
-                Some(Type::Int) => Ok(Type::Int),
-                Some(Type::Str) => Ok(Type::Str),
-                Some(_) => Err("Variable can be only of int or string type"),
-                _ => Err("Inner type must be defined"),
-            }
+        match self.dtype {
+            Some(t) => Ok((0..self.pointer)
+                .into_iter()
+                .fold(t, |acc, _| acc.rref().unwrap())),
+            None => Err("Inner type was not set!"),
         }
     }
 }

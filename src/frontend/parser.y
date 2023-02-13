@@ -68,9 +68,9 @@ GSymbolList -> Result<LinkedList<SymbolBuilder>, (Option<Span>, &'static str)>:
 GSymbolDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
       Id                               { let s = SymbolBuilder::new($1?.span(), true); Ok(s) }
     | Id SizeDef                       { let mut s = SymbolBuilder::new($1?.span(), true); s.dim($2?); Ok(s) }
-    | "*" Id                           { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr(true); Ok(s) }
+    | "*" Id                           { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr(); Ok(s) }
     | Id "(" ParamList ")"             { let mut s = SymbolBuilder::new($1?.span(), true); s.params($3?); Ok(s) }
-    | "*" Id  "(" ParamList ")"        { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr(true).params($4?); Ok(s) }
+    | "*" Id  "(" ParamList ")"        { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr().params($4?); Ok(s) }
     ;
 
 SizeDef -> Result<Vec<i16>, (Option<Span>, &'static str)>:
@@ -79,8 +79,8 @@ SizeDef -> Result<Vec<i16>, (Option<Span>, &'static str)>:
     ;
 
 Type -> Result<Type, (Option<Span>, &'static str)>:
-      "INT_T"         { Ok(Type::Int) }
-    | "STRING_T"      { Ok(Type::Str) }
+      "INT_T"         { Ok(Type::Primitive(PrimitiveType::Int)) }
+    | "STRING_T"      { Ok(Type::Primitive(PrimitiveType::Str)) }
     ;
 
 // FUNCTION DEFINITION GRAMMAR
@@ -142,7 +142,7 @@ LSymbolList -> Result<LinkedList<SymbolBuilder>, (Option<Span>, &'static str)>:
 
 LSymbolDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
       Id              { let s = SymbolBuilder::new($1?.span(), false); Ok(s) }
-    | "*" Id          { let mut s = SymbolBuilder::new($2?.span(), false); s.ptr(true); Ok(s) }
+    | "*" Id          { let mut s = SymbolBuilder::new($2?.span(), false); s.ptr(); Ok(s) }
     ;
 
 Params -> Result<(), (Option<Span>, &'static str)>:
@@ -244,8 +244,8 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | "(" E ")"               { $2 }
     | Var                     { $1 }
     | "&" VarAccess           { Tnode::create_ref($span, $2?) }
-    | Num                     { Tnode::create_constant($lexer, &$1?, Type::Int) }
-    | String                  { Tnode::create_constant($lexer, &$1?, Type::Str) }
+    | Num                     { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Int)) }
+    | String                  { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Str)) }
     | Id "(" ArgList ")"      { Tnode::create_fncall($lexer.span_str($1?.span()), $3?, $span) }
     ;
 

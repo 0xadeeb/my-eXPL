@@ -119,7 +119,7 @@ impl Tnode {
             | Tnode::DeRefOperator { dtype, .. }
             | Tnode::RefOperator { dtype, .. } => dtype.clone(),
             Tnode::Return { exp, .. } => exp.get_type(),
-            _ => Type::Void,
+            _ => Type::Primitive(PrimitiveType::Void),
         }
     }
 
@@ -163,13 +163,13 @@ impl Tnode {
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match (left.get_type(), right.get_type()) {
-            (Type::Int, Type::Int) => {}
+            (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)) => {}
             _ => return Err((Some(span), "Type mismatch, expected integer")),
         }
         Ok(Tnode::BinaryOperator {
             op,
             span,
-            dtype: Type::Int,
+            dtype: Type::Primitive(PrimitiveType::Int),
             lhs: Box::new(left),
             rhs: Box::new(right),
         })
@@ -182,13 +182,14 @@ impl Tnode {
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match (left.get_type(), right.get_type()) {
-            (Type::Int, Type::Int) | (Type::Str, Type::Str) => {}
+            (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int))
+            | (Type::Primitive(PrimitiveType::Str), Type::Primitive(PrimitiveType::Str)) => {}
             _ => return Err((Some(span), "Type mismatch, expected integer")),
         }
         Ok(Tnode::BinaryOperator {
             op,
             span,
-            dtype: Type::Bool,
+            dtype: Type::Primitive(PrimitiveType::Bool),
             lhs: Box::new(left),
             rhs: Box::new(right),
         })
@@ -201,13 +202,13 @@ impl Tnode {
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match (left.get_type(), right.get_type()) {
-            (Type::Bool, Type::Bool) => {}
+            (Type::Primitive(PrimitiveType::Bool), Type::Primitive(PrimitiveType::Bool)) => {}
             _ => return Err((Some(span), "Type mismatch, expected boolean")),
         }
         Ok(Tnode::BinaryOperator {
             op,
             span,
-            dtype: Type::Bool,
+            dtype: Type::Primitive(PrimitiveType::Bool),
             lhs: Box::new(left),
             rhs: Box::new(right),
         })
@@ -269,8 +270,11 @@ impl Tnode {
     }
 
     pub fn create_write(span: Span, e: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+        // correct array type
         match e.get_type() {
-            Type::Int | Type::Str | Type::IntPtr | Type::StrPtr => {}
+            Type::Primitive(PrimitiveType::Int)
+            | Type::Primitive(PrimitiveType::Str)
+            | Type::Pointer(..) => {}
             _ => return Err((e.get_span(), "Type mismatch, expected integer or string")),
         }
         Ok(Tnode::Write {
@@ -285,7 +289,7 @@ impl Tnode {
         stmts: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match condition.get_type() {
-            Type::Bool => {}
+            Type::Primitive(PrimitiveType::Bool) => {}
             _ => return Err((condition.get_span(), "Type mismatch, excepted boolen")),
         }
         Ok(Tnode::While {
@@ -300,7 +304,7 @@ impl Tnode {
         condition: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match condition.get_type() {
-            Type::Bool => {}
+            Type::Primitive(PrimitiveType::Bool) => {}
             _ => return Err((condition.get_span(), "Type mismatch, excepted boolen")),
         }
         Ok(Tnode::Repeat {
@@ -316,7 +320,7 @@ impl Tnode {
         else_stmts: Option<Tnode>,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match condition.get_type() {
-            Type::Bool => {}
+            Type::Primitive(PrimitiveType::Bool) => {}
             _ => return Err((condition.get_span(), "Type mismatch, excepted boolen")),
         }
         Ok(Tnode::If {
@@ -332,17 +336,19 @@ impl Tnode {
         dtype: Type,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match dtype {
-            Type::Int => match lexer.span_str(token.span()).parse::<i32>() {
-                Ok(val) => Ok(Tnode::Constant {
-                    span: token.span(),
-                    dtype: Type::Int,
-                    value: val.to_string(),
-                }),
-                Err(_) => Err((Some(token.span()), "Can't parse to i32")),
-            },
-            Type::Str => Ok(Tnode::Constant {
+            Type::Primitive(PrimitiveType::Int) => {
+                match lexer.span_str(token.span()).parse::<i32>() {
+                    Ok(val) => Ok(Tnode::Constant {
+                        span: token.span(),
+                        dtype: Type::Primitive(PrimitiveType::Int),
+                        value: val.to_string(),
+                    }),
+                    Err(_) => Err((Some(token.span()), "Can't parse to i32")),
+                }
+            }
+            Type::Primitive(PrimitiveType::Str) => Ok(Tnode::Constant {
                 span: token.span(),
-                dtype: Type::Str,
+                dtype: Type::Primitive(PrimitiveType::Str),
                 value: lexer.span_str(token.span()).to_string(),
             }),
             _ => Err((
@@ -422,10 +428,10 @@ impl Tnode {
         rstmt: Tnode,
         span: Span,
     ) -> Result<FnAst, (Option<Span>, &'static str)> {
-        if rtype != Type::Int {
+        if rtype != Type::Primitive(PrimitiveType::Int) {
             return Err((Some(span), "Main function should have return type of Int"));
         }
-        if rstmt.get_type() != Type::Int {
+        if rstmt.get_type() != Type::Primitive(PrimitiveType::Int) {
             return Err((
                 Some(span),
                 "Return value of main function doesn't match defined type",
