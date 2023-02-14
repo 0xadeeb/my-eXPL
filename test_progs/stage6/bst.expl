@@ -1,0 +1,109 @@
+type
+  bst{
+  int a;
+  bst left;
+  bst right;
+  }
+endtype
+
+decl
+  int in,opt;
+  bst insert(bst h, int key);
+  int inOrder(bst h);
+  int preOrder(bst h);
+  int postOrder(bst h);
+enddecl
+
+bst insert(bst h, int key)
+{
+
+  begin
+    if (h == null) then
+      h = alloc();
+      h.a = key;
+      h.left = null;
+      h.right = null;
+    else if (key < h.a) then
+      h.left  = insert(h.left, key);
+    else if (key > h.a) then
+      h.right = insert(h.right, key);
+    endif;
+    endif;
+    endif;
+
+  end
+    return h;
+}
+
+int inOrder(bst h){
+
+  begin
+
+  if(h!=null) then
+
+    in=inOrder(h.left);
+    write(h.a);
+    in=inOrder(h.right);
+  endif;
+  end
+  return 1;
+}
+
+int preOrder(bst h){
+
+  begin
+
+  if(h!=null) then
+    write(h.a);
+    in=preOrder(h.left);
+
+    in=preOrder(h.right);
+  endif;
+  end
+  return 1;
+}
+
+int postOrder(bst h){
+
+  begin
+
+  if(h!=null) then
+
+    in=postOrder(h.left);
+
+    in=postOrder(h.right);
+    write(h.a);
+  endif;
+  end
+  return 1;
+}
+
+int main()
+{
+  decl
+  int val,flag;
+  bst Root;
+  enddecl
+
+  begin
+    initialize();
+    Root = null;
+
+    read(val);
+
+    while(val!=0) do
+      Root = insert(Root,val);
+      read(val);
+    endwhile;
+
+    write("inorder");
+    in = inOrder(Root);
+    write("preorder");
+    in = preOrder(Root);
+    write("postorder");
+    in = postOrder(Root);
+
+  end
+  return 9;
+}
+

@@ -52,28 +52,46 @@ pub fn insert_lst(
 pub fn get_variable(
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     token: &DefaultLexeme,
-    access: Vec<Box<Tnode>>,
+    array_access: Vec<Box<Tnode>>,
+    fields: LinkedList<Span>,
     ref_type: RefType,
 ) -> Result<Tnode, (Option<Span>, &'static str)> {
+    let mut parser = PARSER.lock().unwrap();
     let name = lexer.span_str(token.span());
-    let entry = PARSER
-        .lock()
-        .unwrap()
+    let entry = parser
         .get_var(name)
         .map_err(|msg| (Some(token.span()), msg))?;
 
-    if entry.get_dim() != access.len() as i16 {
+    if entry.get_dim() != array_access.len() as i16 {
         return Err((
             Some(token.span()),
             "Array access dimension does not match the declared dimension",
         ));
     }
 
+    let mut tinstance = entry.get_type();
+    let mut field_access = vec![];
+    for fspan in fields.iter() {
+        let fname = lexer.span_str(*fspan);
+        let (idx, tname) = tinstance
+            .field_list()
+            .map_err(|msg| (Some(token.span()), msg))?
+            .get(fname)
+            .ok_or((Some(*fspan), "This field is not present in the type"))?;
+        field_access.push(*idx as u8);
+        tinstance = parser
+            .tt()
+            .get(tname)
+            .ok_or((Some(*fspan), "This field is not present in the type"))?;
+    }
+
     Ok(Tnode::Var {
         span: token.span(),
         symbol: entry,
+        array_access,
+        field_access,
         ref_type,
-        access,
+        dtype: tinstance,
     })
 }
 

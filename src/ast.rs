@@ -54,8 +54,10 @@ pub enum Tnode {
     Var {
         span: Span,
         symbol: Symbol,
-        access: Vec<Box<Tnode>>,
+        array_access: Vec<Box<Tnode>>,
+        field_access: Vec<u8>,
         ref_type: RefType,
+        dtype: Type,
     },
     Asgn {
         lhs: Box<Tnode>,
@@ -95,6 +97,16 @@ pub enum Tnode {
         span: Span,
         exp: Box<Tnode>,
     },
+    Alloc {
+        span: Span,
+        var: Box<Tnode>,
+    },
+    Free {
+        span: Span,
+        var: Box<Tnode>,
+    },
+    Null,
+    Initialize,
     Continue,
     Break,
     Empty,
@@ -112,13 +124,14 @@ impl Tnode {
 
     pub fn get_type(&self) -> Type {
         match self {
-            Tnode::Var { symbol, .. } => symbol.get_type(),
+            Tnode::Var { dtype, .. } => dtype.clone(),
             Tnode::FnCall { symbol, .. } => symbol.get_type(),
             Tnode::BinaryOperator { dtype, .. }
             | Tnode::Constant { dtype, .. }
             | Tnode::DeRefOperator { dtype, .. }
             | Tnode::RefOperator { dtype, .. } => dtype.clone(),
             Tnode::Return { exp, .. } => exp.get_type(),
+            Tnode::Null => Type::Primitive(PrimitiveType::Null),
             _ => Type::Primitive(PrimitiveType::Void),
         }
     }
@@ -163,7 +176,10 @@ impl Tnode {
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match (left.get_type(), right.get_type()) {
-            (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int)) => {}
+            (
+                Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Null),
+                Type::Primitive(PrimitiveType::Int) | Type::Primitive(PrimitiveType::Null),
+            ) => {}
             _ => return Err((Some(span), "Type mismatch, expected integer")),
         }
         Ok(Tnode::BinaryOperator {
@@ -181,10 +197,11 @@ impl Tnode {
         left: Tnode,
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
-        match (left.get_type(), right.get_type()) {
-            (Type::Primitive(PrimitiveType::Int), Type::Primitive(PrimitiveType::Int))
-            | (Type::Primitive(PrimitiveType::Str), Type::Primitive(PrimitiveType::Str)) => {}
-            _ => return Err((Some(span), "Type mismatch, expected integer")),
+        if left.get_type() != right.get_type()
+            && left.get_type() != Type::Primitive(PrimitiveType::Null)
+            && right.get_type() != Type::Primitive(PrimitiveType::Null)
+        {
+            return Err((Some(span), "Type mismatch"));
         }
         Ok(Tnode::BinaryOperator {
             op,
@@ -202,7 +219,10 @@ impl Tnode {
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
         match (left.get_type(), right.get_type()) {
-            (Type::Primitive(PrimitiveType::Bool), Type::Primitive(PrimitiveType::Bool)) => {}
+            (
+                Type::Primitive(PrimitiveType::Bool) | Type::Primitive(PrimitiveType::Null),
+                Type::Primitive(PrimitiveType::Bool) | Type::Primitive(PrimitiveType::Null),
+            ) => {}
             _ => return Err((Some(span), "Type mismatch, expected boolean")),
         }
         Ok(Tnode::BinaryOperator {
@@ -219,7 +239,9 @@ impl Tnode {
         mut left: Tnode,
         right: Tnode,
     ) -> Result<Tnode, (Option<Span>, &'static str)> {
-        if right.get_type() != left.get_type() {
+        if right.get_type() != left.get_type()
+            && right.get_type() != Type::Primitive(PrimitiveType::Null)
+        {
             return Err((
                 Some(span),
                 "LHS and RHS types of assignment statment don't match",
@@ -446,6 +468,39 @@ impl Tnode {
             0,
             PARSER.lock().unwrap().lst().get_size(),
         ))
+    }
+
+    pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+        match &var {
+            Tnode::Var { dtype, .. } => match dtype {
+                Type::Primitive(..) => {
+                    return Err((Some(span), "Can't assign memory to stack variable"))
+                }
+                _ => {}
+            },
+            _ => return Err((Some(span), "Memory can be assigned to only variables")),
+        }
+        var.set_ref(RefType::LHS).unwrap();
+        Ok(Tnode::Alloc {
+            span,
+            var: Box::new(var),
+        })
+    }
+
+    pub fn create_free(span: Span, var: Tnode) -> Result<Tnode, (Option<Span>, &'static str)> {
+        match &var {
+            Tnode::Var { dtype, .. } => match dtype {
+                Type::Primitive(..) => {
+                    return Err((Some(span), "Can't free memory of stack variable"))
+                }
+                _ => {}
+            },
+            _ => return Err((Some(span), "Memory can be freed only for variables")),
+        }
+        Ok(Tnode::Free {
+            span,
+            var: Box::new(var),
+        })
     }
 }
 

@@ -57,7 +57,8 @@ impl CodeGen {
             }
             Tnode::Var {
                 symbol,
-                access,
+                array_access,
+                field_access,
                 ref_type,
                 ..
             } => {
@@ -74,7 +75,7 @@ impl CodeGen {
                     }
                     arr @ Symbol::Array { dim, .. } => {
                         writeln!(self.fd, "MOV R{}, {}", reg1, arr.get_address())?;
-                        for (i, exp) in access.iter().enumerate() {
+                        for (i, exp) in array_access.iter().enumerate() {
                             let reg2 = self.evaluate(exp)?.unwrap();
                             for d in dim[(i + 1)..].iter() {
                                 writeln!(self.fd, "MUL R{}, {}", reg2, d)?;
@@ -83,7 +84,13 @@ impl CodeGen {
                             self.registers.free_reg(reg2);
                         }
                     }
-                    _ => {}
+                    Symbol::Function { .. } => {
+                        panic!("Symbol of function in var");
+                    }
+                }
+                for idx in field_access.iter() {
+                    writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
+                    writeln!(self.fd, "ADD R{}, {}", reg1, idx)?;
                 }
                 if let RefType::RHS = ref_type {
                     writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
@@ -117,24 +124,13 @@ impl CodeGen {
                     BinaryOpType::LT => writeln!(self.fd, "LT R{}, R{}", reg1, reg2)?,
                     BinaryOpType::LE => writeln!(self.fd, "LE R{}, R{}", reg1, reg2)?,
                     BinaryOpType::AND => {
-                        let label1 = self.labels.get();
-                        let label2 = self.labels.get();
-                        writeln!(self.fd, "JZ R{}, <L{}>", reg1, label1)?;
-                        writeln!(self.fd, "JZ R{}, <L{}>", reg2, label1)?;
-                        writeln!(self.fd, "JMP <L{}>", label2)?;
-                        write!(self.fd, "L{}:", label1)?;
-                        writeln!(self.fd, "MOV R{}, 0", reg1)?;
-                        write!(self.fd, "L{}:", label2)?;
+                        writeln!(self.fd, "ADD R{}, R{}", reg1, reg2)?;
+                        writeln!(self.fd, "DIV R{}, 2", reg1)?;
                     }
                     BinaryOpType::OR => {
-                        let label1 = self.labels.get();
-                        let label2 = self.labels.get();
-                        writeln!(self.fd, "JNZ R{}, <L{}>", reg1, label1)?;
-                        writeln!(self.fd, "JNZ R{}, <L{}>", reg2, label1)?;
-                        writeln!(self.fd, "JMP <L{}>", label2)?;
-                        write!(self.fd, "L{}:", label1)?;
-                        writeln!(self.fd, "MOV R{}, 1", reg1)?;
-                        write!(self.fd, "L{}:", label2)?;
+                        writeln!(self.fd, "ADD R{}, R{}", reg1, reg2)?;
+                        writeln!(self.fd, "ADD R{}, 1", reg1)?;
+                        writeln!(self.fd, "DIV R{}, 2", reg1)?;
                     }
                 }
                 self.registers.free_reg(reg2);
@@ -290,6 +286,71 @@ impl CodeGen {
                 self.registers.free_reg(reg1);
                 self.registers.free_reg(reg2);
                 Ok(None)
+            }
+            Tnode::Initialize => {
+                self.pre_call();
+                let reg1 = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No self.registers left!"))?;
+
+                writeln!(self.fd, "MOV R{}, \"Heapset\"", reg1)?;
+                writeln!(self.fd, "PUSH R{}", reg1)?;
+                writeln!(self.fd, "ADD SP, 4")?;
+                writeln!(self.fd, "CALL 0")?;
+                writeln!(self.fd, "SUB SP, 5")?;
+
+                self.registers.free_reg(reg1);
+                self.post_call();
+                Ok(None)
+            }
+            Tnode::Alloc { var, .. } => {
+                let reg1 = self.evaluate(var)?.unwrap();
+                self.pre_call();
+                let reg2 = self
+                    .registers
+                    .get_ret_reg()
+                    .ok_or(err_from_str("No self.registers left!"))?;
+                writeln!(self.fd, "MOV R{}, \"Alloc\"", reg2)?;
+                writeln!(self.fd, "PUSH R{}", reg2)?;
+                writeln!(self.fd, "MOV R{}, 8", reg2)?;
+                writeln!(self.fd, "PUSH R{}", reg2)?;
+                writeln!(self.fd, "ADD SP, 3")?;
+                writeln!(self.fd, "CALL 0")?;
+                writeln!(self.fd, "POP R{}", reg2)?;
+                writeln!(self.fd, "SUB SP, 4")?;
+                self.post_call();
+                writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
+                self.registers.free_reg(reg1);
+                self.registers.free_reg(reg2);
+                Ok(None)
+            }
+            Tnode::Free { var, .. } => {
+                let reg1 = self.evaluate(var)?.unwrap();
+                let reg2 = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No self.registers left!"))?;
+
+                self.pre_call();
+                writeln!(self.fd, "MOV R{}, \"Free\"", reg2)?;
+                writeln!(self.fd, "PUSH R{}", reg2)?;
+                writeln!(self.fd, "PUSH R{}", reg1)?;
+                writeln!(self.fd, "ADD SP, 3")?;
+                writeln!(self.fd, "CALL 0")?;
+                writeln!(self.fd, "SUB SP, 5")?;
+                self.post_call();
+                self.registers.free_reg(reg1);
+                self.registers.free_reg(reg2);
+                Ok(None)
+            }
+            Tnode::Null => {
+                let reg1 = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No self.registers left!"))?;
+                writeln!(self.fd, "MOV R{}, 0", reg1)?;
+                Ok(Some(reg1))
             }
             Tnode::Empty => Ok(None),
         }

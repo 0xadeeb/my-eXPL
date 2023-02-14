@@ -27,11 +27,13 @@
 %epp RETURN   "return"
 %epp DECL     "decl"
 %epp ENDDECL  "enddecl"
+%epp TYPE     "type"
+%epp ENDTYPE  "endtype"
 %epp INT_T    "int"
 %epp STRING_T "string"
 %epp STRING_C "string_const"
 
-%token "(" ")" "," ";" "[" "]" "&" "{" "}"
+%token "(" ")" "," ";" "[" "]" "&" "{" "}" "." "NULL"
 %left "&&" "||"
 %left "==" "!="
 %left "<" ">" "<=" ">="
@@ -40,8 +42,39 @@
 
 %%
 Program -> Result<(LinkedList<FnAst>, i16), (Option<Span>, &'static str)>:
-      GDeclaration FDefBlock MainFn    { let mut $2 = $2?; $2.push_back($3?); Ok(($2, $1?)) }
-    | GDeclaration MainFn              { Ok((LinkedList::from([$2?]), $1?)) }
+      TypeDefBlock GDeclaration FDefBlock MainFn    { $1?; let mut $3 = $3?; $3.push_back($4?); Ok(($3, $2?)) }
+    | TypeDefBlock GDeclaration MainFn              { $1?; Ok((LinkedList::from([$3?]), $2?)) }
+    ;
+
+// TYPE DECLARATION GRAMMAR
+TypeDefBlock -> Result<(), (Option<Span>, &'static str)>:
+      "TYPE" TypeDefList "ENDTYPE"    { $2 }
+    | "TYPE" "ENDTYPE"                { Ok(()) }
+    | /* Empty */                     { Ok(()) }
+    ;
+
+TypeDefList -> Result<(), (Option<Span>, &'static str)>:
+      TypeDefList TypeDef   { $1?; $2 }
+    | TypeDef               { $1 }
+    ;
+
+TypeDef -> Result<(), (Option<Span>, &'static str)>:
+      Id "{" FieldDeclList "}"      { PARSER.lock().unwrap().tt().insert($lexer, $1?.span(), $3?) }
+    ;
+
+FieldDeclList -> Result<LinkedList<(Span, Span)>, (Option<Span>, &'static str)>:
+      FieldDecl FieldDeclList       { let mut $2 = $2?; $2.push_front($1?); Ok($2) }
+    | FieldDecl                     { Ok(LinkedList::from([$1?])) }
+    ;
+
+FieldDecl -> Result<(Span, Span), (Option<Span>, &'static str)>:
+      TypeDefName Id ";"            { Ok(($1?, $2?.span())) }
+    ;
+
+TypeDefName -> Result<Span,  (Option<Span>, &'static str)>:
+      "INT_T"               { Ok($1.as_ref().unwrap().span()) }
+    | "STRING_T"            { Ok($1.as_ref().unwrap().span()) }
+    | Id                    { Ok($1?.span()) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
@@ -81,6 +114,15 @@ SizeDef -> Result<Vec<i16>, (Option<Span>, &'static str)>:
 Type -> Result<Type, (Option<Span>, &'static str)>:
       "INT_T"         { Ok(Type::Primitive(PrimitiveType::Int)) }
     | "STRING_T"      { Ok(Type::Primitive(PrimitiveType::Str)) }
+    | Id              {
+      let span = $1?.span();
+      PARSER
+        .lock()
+        .unwrap()
+        .tt()
+        .get($lexer.span_str(span))
+        .ok_or((Some(span), "Type not defined"))
+    }
     ;
 
 // FUNCTION DEFINITION GRAMMAR
@@ -179,6 +221,7 @@ Slist -> Result<Tnode, (Option<Span>, &'static str)>:
     | Stmt        { $1 }
     ;
 
+// STATEMENTS GRAMMAR
 Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
       InputStmt     { $1 }
     | OutputStmt    { $1 }
@@ -188,6 +231,9 @@ Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
     | IfStmt        { $1 }
     | WhileStmt     { $1 }
     | RepeatStmt    { $1 }
+    | InitStmt      { $1 }
+    | AllocStmt     { $1 }
+    | FreeStmt      { $1 }
     ;
 
 IfStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -227,6 +273,18 @@ AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
       Var "=" E ";"     { Tnode::create_asg($span, $1?, $3?) }
     ;
 
+InitStmt -> Result<Tnode, (Option<Span>, &'static str)>:
+      "INIT" "(" ")" ";"         { Ok(Tnode::Initialize) }
+    ;
+
+AllocStmt -> Result<Tnode, (Option<Span>, &'static str)>:
+      Var "=" "ALLOC" "(" ")" ";"         { Tnode::create_alloc($span, $1?) }
+    ;
+
+FreeStmt -> Result<Tnode, (Option<Span>, &'static str)>:
+      "FREE" "(" Var ")" ";"              { Tnode::create_free($span, $3?) }
+    ;
+
 E -> Result<Tnode, (Option<Span>, &'static str)>:
       E "+" E                 { Tnode::create_int(BinaryOpType::Add, $span, $1?, $3?) }
     | E "-" E                 { Tnode::create_int(BinaryOpType::Sub, $span, $1?, $3?) }
@@ -247,6 +305,7 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | Num                     { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Int)) }
     | String                  { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Str)) }
     | Id "(" ArgList ")"      { Tnode::create_fncall($lexer.span_str($1?.span()), $3?, $span) }
+    | "NULL"                  { Ok(Tnode::Null) }
     ;
 
 ArgList -> Result<LinkedList<Tnode>, (Option<Span>, &'static str)>:
@@ -261,8 +320,15 @@ Var -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
-      Id                         { get_variable($lexer, &$1?, Vec::new(), RefType::RHS) }
-    | Id ArrayAccess             { get_variable($lexer, &$1?, check_access_vec($2?)?, RefType::RHS) }
+      Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS) }
+    | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS) }
+    | Id "." DotField                   { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS) }
+    | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS) }
+    ;
+
+DotField ->  Result<LinkedList<Span>, (Option<Span>, &'static str)>:
+      Id "." DotField         { let mut $3 = $3?; $3.push_front($1?.span()); Ok($3) }
+    | Id                      { Ok(LinkedList::from([$1?.span()])) }
     ;
 
 ArrayAccess -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)>:
