@@ -4,23 +4,30 @@ type
     int data;
     List next;
   }
+  Stack {
+      List list;
+      Stack next;
+  }
 endtype
 
 decl
-    List head;
+    List head, rhead;
 enddecl
 
 int main()
 {
   decl
     int length, x, a, b, c;
-    List p, q;
+    List p, q, l;
+    Stack s, t;
   enddecl
 
   begin
     initialize();
 
-    head=null;
+    head = null;
+    rhead = null;
+    s = null;
     read(length);
 
     q=head;
@@ -31,18 +38,44 @@ int main()
       p.next=null;
 
       if (head==null) then
-      head=p;
-      q=p;
+          head=p;
+          q=p;
       else
-      q.next=p;
-      q=q.next;
+          q.next=p;
+          q=q.next;
       endif;
 
       length=length-1;
     endwhile;
 
+    t = s;
+    q = head;
+    while(q != null) do
+        t = alloc();
+        t.list = q;
+        t.next = s;
+        s = t;
+        q = q.next;
+    endwhile;
+    
+    q = rhead;
+    while (s != null)  do
+      p = s.list;
+      if (rhead==null) then
+          rhead=p;
+          q=p;
+      else
+          q.next=p;
+          q=q.next;
+      endif;
+      s = s.next;
+    endwhile;
+    if (q != null) then
+        q.next = null;
+    endif;
+
     write("List:");
-    p=head;
+    p=rhead;
     while(p!=null)  do
       write(p.data);
       p=p.next;

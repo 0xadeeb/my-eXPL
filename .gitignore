@@ -1,3 +1,5 @@
 /target
 *.obj
 *.xsm
+.direnv
+.envrc

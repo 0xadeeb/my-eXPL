@@ -134,7 +134,7 @@ FDefBlock -> Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
 FDef -> Result<FnAst, (Option<Span>, &'static str)>:
       FType FName "(" Params ")" "{" LDeclaration Body ReturnStmt "}"    {
         $2?; $4?; $7?;
-        Tnode::create_fn(
+        create_fn(
           $1?, $8?, $9?,
           Span::new($span.start(), $5.unwrap().span().end())
         )
@@ -204,7 +204,7 @@ Param -> Result<(Type, String), (Option<Span>, &'static str)>:
 MainFn -> Result<FnAst, (Option<Span>, &'static str)>:
       FType Main "(" ")" "{" LDeclaration Body ReturnStmt "}"   {
         $2?; $6?;
-        Tnode::create_main_block(
+        create_main_block(
           $1?, $7?, $8?,
           Span::new($span.start(), $4.unwrap().span().end())
         )
@@ -237,24 +237,24 @@ Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 IfStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"               { Tnode::create_if($span, $3?, $6?, None) }
-    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"  { Tnode::create_if($span, $3?, $6?, Some($8?)) }
+      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"               { create_if($span, $3?, $6?, None) }
+    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"  { create_if($span, $3?, $6?, Some($8?)) }
     ;
 
 WhileStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"      { Tnode::create_while($span, $3?, $6?) }
+      "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"      { create_while($span, $3?, $6?) }
     ;
 
 RepeatStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { Tnode::create_repeat($span, $3?, $6?) }
+      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { create_repeat($span, $3?, $6?) }
     ;
 
 InputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "READ" "(" Var ")" ";"   { Tnode::create_read($span, $3?) }
+      "READ" "(" Var ")" ";"   { create_read($span, $3?) }
     ;
 
 OutputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WRITE" "(" E ")" ";"    { Tnode::create_write($span, $3?) }
+      "WRITE" "(" E ")" ";"    { create_write($span, $3?) }
     ;
 
 BreakStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -265,12 +265,8 @@ ContinueStmt -> Result<Tnode, (Option<Span>, &'static str)>:
       "CONTINUE" ";"    { Ok(Tnode::Continue) }
     ;
 
-ReturnStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "RETURN" E ";"    { Ok(Tnode::Return{exp: Box::new($2?), span: $span}) }
-    ;
-
 AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Var "=" E ";"     { Tnode::create_asg($span, $1?, $3?) }
+      Var "=" E ";"     { create_asg($span, $1?, $3?) }
     ;
 
 InitStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -278,33 +274,38 @@ InitStmt -> Result<Tnode, (Option<Span>, &'static str)>:
     ;
 
 AllocStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Var "=" "ALLOC" "(" ")" ";"         { Tnode::create_alloc($span, $1?) }
+      Var "=" "ALLOC" "(" ")" ";"         { create_alloc($span, $1?) }
     ;
 
 FreeStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "FREE" "(" Var ")" ";"              { Tnode::create_free($span, $3?) }
+      "FREE" "(" Var ")" ";"              { create_free($span, $3?) }
     ;
 
+ReturnStmt -> Result<Tnode, (Option<Span>, &'static str)>:
+      "RETURN" E ";"    { create_return($span, $2?) }
+    ;
+
+// EXPRESSION GRAMMAR
 E -> Result<Tnode, (Option<Span>, &'static str)>:
-      E "+" E                 { Tnode::create_int(BinaryOpType::Add, $span, $1?, $3?) }
-    | E "-" E                 { Tnode::create_int(BinaryOpType::Sub, $span, $1?, $3?) }
-    | E "*" E                 { Tnode::create_int(BinaryOpType::Mul, $span, $1?, $3?) }
-    | E "/" E                 { Tnode::create_int(BinaryOpType::Div, $span, $1?, $3?) }
-    | E "%" E                 { Tnode::create_int(BinaryOpType::Mod, $span, $1?, $3?) }
-    | E "==" E                { Tnode::create_bool(BinaryOpType::EQ, $span, $1?, $3?) }
-    | E "!=" E                { Tnode::create_bool(BinaryOpType::NE, $span, $1?, $3?) }
-    | E ">=" E                { Tnode::create_bool(BinaryOpType::GE, $span, $1?, $3?) }
-    | E ">" E                 { Tnode::create_bool(BinaryOpType::GT, $span, $1?, $3?) }
-    | E "<=" E                { Tnode::create_bool(BinaryOpType::LE, $span, $1?, $3?) }
-    | E "<" E                 { Tnode::create_bool(BinaryOpType::LT, $span, $1?, $3?) }
-    | E "&&" E                { Tnode::create_logical_op(BinaryOpType::AND, $span, $1?, $3?) }
-    | E "||" E                { Tnode::create_logical_op(BinaryOpType::OR, $span, $1?, $3?) }
+      E "+" E                 { create_int(BinaryOpType::Add, $span, $1?, $3?) }
+    | E "-" E                 { create_int(BinaryOpType::Sub, $span, $1?, $3?) }
+    | E "*" E                 { create_int(BinaryOpType::Mul, $span, $1?, $3?) }
+    | E "/" E                 { create_int(BinaryOpType::Div, $span, $1?, $3?) }
+    | E "%" E                 { create_int(BinaryOpType::Mod, $span, $1?, $3?) }
+    | E "==" E                { create_bool(BinaryOpType::EQ, $span, $1?, $3?) }
+    | E "!=" E                { create_bool(BinaryOpType::NE, $span, $1?, $3?) }
+    | E ">=" E                { create_bool(BinaryOpType::GE, $span, $1?, $3?) }
+    | E ">" E                 { create_bool(BinaryOpType::GT, $span, $1?, $3?) }
+    | E "<=" E                { create_bool(BinaryOpType::LE, $span, $1?, $3?) }
+    | E "<" E                 { create_bool(BinaryOpType::LT, $span, $1?, $3?) }
+    | E "&&" E                { create_logical_op(BinaryOpType::AND, $span, $1?, $3?) }
+    | E "||" E                { create_logical_op(BinaryOpType::OR, $span, $1?, $3?) }
     | "(" E ")"               { $2 }
     | Var                     { $1 }
-    | "&" VarAccess           { Tnode::create_ref($span, $2?) }
-    | Num                     { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Int)) }
-    | String                  { Tnode::create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Str)) }
-    | Id "(" ArgList ")"      { Tnode::create_fncall($lexer.span_str($1?.span()), $3?, $span) }
+    | "&" VarAccess           { create_ref($span, $2?) }
+    | Num                     { create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Int)) }
+    | String                  { create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Str)) }
+    | Id "(" ArgList ")"      { create_fncall($lexer.span_str($1?.span()), $3?, $span) }
     | "NULL"                  { Ok(Tnode::Null) }
     ;
 
@@ -316,7 +317,7 @@ ArgList -> Result<LinkedList<Tnode>, (Option<Span>, &'static str)>:
 
 Var -> Result<Tnode, (Option<Span>, &'static str)>:
       VarAccess       { $1 }
-    | "*" VarAccess   { Tnode::create_deref($span, $2?) }
+    | "*" VarAccess   { create_deref($span, $2?) }
     ;
 
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
@@ -343,6 +344,7 @@ Main -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
     }
     ;
 
+// LEXEME RESOLVE
 Id -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
     "VAR"          { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
     ;
@@ -366,7 +368,7 @@ Unmatched -> ():
 use lrlex::DefaultLexeme;
 use lrpar::Span;
 use myexpl::ast::*;
-use myexpl::frontend::methods::*;
+use myexpl::frontend::semantics::*;
 use myexpl::frontend::PARSER;
 use myexpl::type_table::*;
 use myexpl::symbol::*;

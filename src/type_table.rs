@@ -26,7 +26,7 @@ impl Type {
     pub fn deref(&self) -> Result<Self, &'static str> {
         match self {
             Self::Pointer(t) => Ok(*t.clone()),
-            _ => Err("Referencing not defined for this variable type"),
+            _ => Err("Dereferencing not defined for this variable type"),
         }
     }
     pub fn rref(&self) -> Result<Self, &'static str> {

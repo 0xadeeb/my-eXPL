@@ -6,5 +6,5 @@ lazy_static! {
     pub static ref PARSER: Mutex<ParserState> = Mutex::new(ParserState::default());
 }
 
-pub mod methods;
 pub mod parser_state;
+pub mod semantics;

@@ -37,9 +37,7 @@ pub fn translate_label(
                                 match map.get(&label) {
                                     Some(no) => write!(fd, "{}", no)?,
                                     None => {
-                                        return Err(Box::<dyn Error>::from(
-                                            "Failed to get adrress from label",
-                                        ))
+                                        return Err(Box::<dyn Error>::from("Function not defined!"))
                                     }
                                 }
                             }
