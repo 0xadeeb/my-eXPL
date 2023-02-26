@@ -1,37 +1,43 @@
 %start Program
 
-%avoid_insert "NUM"
-%avoid_insert "STRING_C"
-%avoid_insert "VAR"
-%avoid_insert "STRING_T"
-%avoid_insert "INT_T"
+%avoid_insert   "NUM"
+%avoid_insert   "STRING_C"
+%avoid_insert   "VAR"
+%avoid_insert   "STRING_T"
+%avoid_insert   "INT_T"
 
-%epp BEGIN    "begin"
-%epp END      "end"
-%epp READ     "read"
-%epp WRITE    "write"
-%epp NUM      "integer"
-%epp VAR      "variable"
-%epp IF       "if"
-%epp THEN     "then"
-%epp ELSE     "else"
-%epp ENDIF    "endif"
-%epp DO       "do"
-%epp WHILE    "while"
-%epp ENDWHILE "endwhile"
-%epp REPEAT   "repeat"
-%epp UNTIL    "until"
-%epp CONTINUE "continue"
-%epp BREAK    "break"
-%epp MAIN     "main"
-%epp RETURN   "return"
-%epp DECL     "decl"
-%epp ENDDECL  "enddecl"
-%epp TYPE     "type"
-%epp ENDTYPE  "endtype"
-%epp INT_T    "int"
-%epp STRING_T "string"
-%epp STRING_C "string_const"
+%epp BEGIN      "begin"
+%epp END        "end"
+%epp READ       "read"
+%epp WRITE      "write"
+%epp NUM        "integer"
+%epp VAR        "variable"
+%epp IF         "if"
+%epp THEN       "then"
+%epp ELSE       "else"
+%epp ENDIF      "endif"
+%epp DO         "do"
+%epp WHILE      "while"
+%epp ENDWHILE   "endwhile"
+%epp REPEAT     "repeat"
+%epp UNTIL      "until"
+%epp CONTINUE   "continue"
+%epp BREAK      "break"
+%epp MAIN       "main"
+%epp RETURN     "return"
+%epp DECL       "decl"
+%epp ENDDECL    "enddecl"
+%epp TYPE       "type"
+%epp ENDTYPE    "endtype"
+%epp CLASS      "type"
+%epp ENDCLASS   "endtype"
+%epp EXTENDS    "extends"
+%epp NEW        "new"
+%epp DELETE     "delete"
+%epp SELF       "self"
+%epp INT_T      "int"
+%epp STRING_T   "string"
+%epp STRING_C   "string_const"
 
 %token "(" ")" "," ";" "[" "]" "&" "{" "}" "." "NULL"
 %left "&&" "||"
@@ -41,9 +47,9 @@
 %left "*" "/" "%"
 
 %%
-Program -> Result<(LinkedList<FnAst>, i16), (Option<Span>, &'static str)>:
-      TypeDefBlock GDeclaration FDefBlock MainFn    { $1?; let mut $3 = $3?; $3.push_back($4?); Ok(($3, $2?)) }
-    | TypeDefBlock GDeclaration MainFn              { $1?; Ok((LinkedList::from([$3?]), $2?)) }
+// START
+Program -> Result<(LinkedList<FnAst>, LinkedList<Vec<u8>>, i16), (Option<Span>, &'static str)>:
+      TypeDefBlock ClassDefBlock GDeclaration Functions    { $1?; Ok(($4?, $2?, $3?)) }
     ;
 
 // TYPE DECLARATION GRAMMAR
@@ -59,11 +65,37 @@ TypeDefList -> Result<(), (Option<Span>, &'static str)>:
     ;
 
 TypeDef -> Result<(), (Option<Span>, &'static str)>:
-      Id "{" FieldDeclList "}"      { PARSER.lock().unwrap().tt().insert($lexer, $1?.span(), $3?) }
+      Id "{" FieldDeclList "}"      { PARSER.lock().unwrap().tt().insert_struct($lexer, $1?.span(), $3?) }
+    ;
+
+// CLASS DECLARATION GRAMMAR
+ClassDefBlock -> Result<LinkedList<Vec<u8>>,  (Option<Span>, &'static str)>:
+       "CLASS" ClassDefList "ENDCLASS"   { $2 }
+     | "CLASS" "ENDCLASS"                { Ok(LinkedList::new()) }
+     | /* Empty */                       { Ok(LinkedList::new()) }
+     ;
+
+ClassDefList -> Result<LinkedList<Vec<u8>>,  (Option<Span>, &'static str)>:
+       ClassDefList ClassDef       { let mut $1 = $1?; $1.push_back($2?); Ok($1) }
+     | ClassDef                    { Ok(LinkedList::from([$1?])) }
+     ;
+
+ClassDef -> Result<Vec<u8>, (Option<Span>, &'static str)>:
+       Cname "{" CDecl MethodDefns "}"     { $1?; $4?; $3 }
+     ;
+
+Cname -> Result<(), (Option<Span>, &'static str)>:
+       Id                  { PARSER.lock().unwrap().set_class($lexer, $1?.span(), None) }
+     | Id "EXTENDS" Id     { PARSER.lock().unwrap().set_class($lexer, $1?.span(), Some($3?.span())) }
+     ;
+
+CDecl -> Result<Vec<u8>, (Option<Span>, &'static str)>:
+      "DECL" MethodDeclList "ENDDECL"                   { PARSER.lock().unwrap().insert_cst($2?, LinkedList::new()) }
+    | "DECL" FieldDeclList MethodDeclList "ENDDECL"     { PARSER.lock().unwrap().insert_cst($3?, $2?) }
     ;
 
 FieldDeclList -> Result<LinkedList<(Span, Span)>, (Option<Span>, &'static str)>:
-      FieldDecl FieldDeclList       { let mut $2 = $2?; $2.push_front($1?); Ok($2) }
+      FieldDeclList FieldDecl       { let mut $1 = $1?; $1.push_back($2?); Ok($1) }
     | FieldDecl                     { Ok(LinkedList::from([$1?])) }
     ;
 
@@ -71,10 +103,24 @@ FieldDecl -> Result<(Span, Span), (Option<Span>, &'static str)>:
       TypeDefName Id ";"            { Ok(($1?, $2?.span())) }
     ;
 
+MethodDeclList -> Result<LinkedList<(Type, Span, LinkedList<(Type, String)>)>,  (Option<Span>, &'static str)>:
+      MethodDeclList MethodDecl    { let mut $1 = $1?; $1.push_back($2?); Ok($1) }
+    | MethodDecl                   { Ok(LinkedList::from([$1?])) }
+    ;
+
+MethodDecl -> Result<(Type, Span, LinkedList<(Type, String)>),  (Option<Span>, &'static str)>:
+      TypeDefName Id "(" ParamList ")" ";"  { Ok(($1?, $2?.span(), $4?)) }
+    ;
+
 TypeDefName -> Result<Span,  (Option<Span>, &'static str)>:
       "INT_T"               { Ok($1.as_ref().unwrap().span()) }
     | "STRING_T"            { Ok($1.as_ref().unwrap().span()) }
     | Id                    { Ok($1?.span()) }
+    ;
+
+MethodDefns -> Result<(),  (Option<Span>, &'static str)>:
+      MethodDefns FDef   { PARSER.lock().unwrap().insert_fns($2?) }
+    | FDef               { PARSER.lock().unwrap().insert_fns($1?) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
@@ -126,6 +172,11 @@ Type -> Result<Type, (Option<Span>, &'static str)>:
     ;
 
 // FUNCTION DEFINITION GRAMMAR
+Functions ->  Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
+      FDefBlock MainFn    { let mut $1 = $1?; $1.push_back($2?); Ok(PARSER.lock().unwrap().insert_fns($1)) }
+    | MainFn              { Ok(PARSER.lock().unwrap().insert_fns($1?)) }
+    ;
+
 FDefBlock -> Result<LinkedList<FnAst>, (Option<Span>, &'static str)>:
       FDefBlock FDef        { let mut $1 = $1?; $1.push_back($2?); Ok($1) }
     | FDef                  { Ok(LinkedList::from([$1?])) }
@@ -223,62 +274,20 @@ Slist -> Result<Tnode, (Option<Span>, &'static str)>:
 
 // STATEMENTS GRAMMAR
 Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      InputStmt     { $1 }
-    | OutputStmt    { $1 }
-    | AsgStmt       { $1 }
-    | BreakStmt     { $1 }
-    | ContinueStmt  { $1 }
-    | IfStmt        { $1 }
-    | WhileStmt     { $1 }
-    | RepeatStmt    { $1 }
-    | InitStmt      { $1 }
-    | AllocStmt     { $1 }
-    | FreeStmt      { $1 }
-    ;
-
-IfStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"               { create_if($span, $3?, $6?, None) }
-    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"  { create_if($span, $3?, $6?, Some($8?)) }
-    ;
-
-WhileStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"      { create_while($span, $3?, $6?) }
-    ;
-
-RepeatStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"        { create_repeat($span, $3?, $6?) }
-    ;
-
-InputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "READ" "(" Var ")" ";"   { create_read($span, $3?) }
-    ;
-
-OutputStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "WRITE" "(" E ")" ";"    { create_write($span, $3?) }
-    ;
-
-BreakStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "BREAK" ";"       { Ok(Tnode::Break) }
-    ;
-
-ContinueStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "CONTINUE" ";"    { Ok(Tnode::Continue) }
-    ;
-
-AsgStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Var "=" E ";"     { create_asg($span, $1?, $3?) }
-    ;
-
-InitStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "INIT" "(" ")" ";"         { Ok(Tnode::Initialize) }
-    ;
-
-AllocStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      Var "=" "ALLOC" "(" ")" ";"         { create_alloc($span, $1?) }
-    ;
-
-FreeStmt -> Result<Tnode, (Option<Span>, &'static str)>:
-      "FREE" "(" Var ")" ";"              { create_free($span, $3?) }
+      "IF" "(" E ")" "THEN" Slist "ENDIF" ";"                 { create_if($span, $3?, $6?, None) }
+    | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"    { create_if($span, $3?, $6?, Some($8?)) }
+    | "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"             { create_while($span, $3?, $6?) }
+    | "REPEAT" "DO" Slist "UNTIL" "(" E ")" ";"               { create_repeat($span, $3?, $6?) }
+    | "READ" "(" Var ")" ";"                                  { create_read($span, $3?) }
+    | "WRITE" "(" E ")" ";"                                   { create_write($span, $3?) }
+    | "BREAK" ";"                                             { Ok(Tnode::Break) }
+    | "CONTINUE" ";"                                          { Ok(Tnode::Continue) }
+    | Var "=" E ";"                                           { create_asg($span, $1?, $3?) }
+    | "INIT" "(" ")" ";"                                      { Ok(Tnode::Initialize) }
+    | Var "=" "ALLOC" "(" ")" ";"                             { create_alloc($span, $1?) }
+    | "FREE" "(" Var ")" ";"                                  { create_free($span, $3?) }
+    | Var "=" "NEW" "(" Id ")" ";"                            { Err((None, "nothing")) }
+    | "DELETE" "(" Var ")" ";"                                { Err((None, "nothing")) }
     ;
 
 ReturnStmt -> Result<Tnode, (Option<Span>, &'static str)>:
@@ -305,7 +314,7 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | "&" VarAccess           { create_ref($span, $2?) }
     | Num                     { create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Int)) }
     | String                  { create_constant($lexer, &$1?, Type::Primitive(PrimitiveType::Str)) }
-    | Id "(" ArgList ")"      { create_fncall($lexer.span_str($1?.span()), $3?, $span) }
+    | FnCall                  { $1 }
     | "NULL"                  { Ok(Tnode::Null) }
     ;
 
@@ -323,8 +332,19 @@ Var -> Result<Tnode, (Option<Span>, &'static str)>:
 VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
       Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS) }
     | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS) }
-    | Id "." DotField                   { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS) }
+    | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS) }
     | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS) }
+    ;
+
+FnCall -> Result<Tnode, (Option<Span>, &'static str)>:
+      Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span) }
+    | Id ArrayAccess "." DotField "(" ArgList ")"     { Err((None, "nothing")) }
+    | Inst "." DotField "(" ArgList ")"               { Err((None, "nothing")) }
+    ;
+
+Inst -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
+      Id       { $1 }
+    | "SELF"   { PARSER.lock().unwrap().check_self($1)  }
     ;
 
 DotField ->  Result<LinkedList<Span>, (Option<Span>, &'static str)>:

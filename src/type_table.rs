@@ -1,7 +1,12 @@
-use std::collections::{HashMap, LinkedList};
+use std::{
+    collections::{HashMap, LinkedList},
+    sync::{Arc, Weak},
+};
 
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
+
+use crate::symbol::SymbolTable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveType {
@@ -12,15 +17,38 @@ pub enum PrimitiveType {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Type {
     Primitive(PrimitiveType),
-    UserDef {
+    Struct {
+        name: String,
         size: u16,
         field_list: HashMap<String, (u8, String)>, // map(variable name -> (field idx, type name))
     },
+    Class {
+        name: String,
+        cst: SymbolTable,
+        idx: u8,
+        size: u16,
+        parent: Option<Weak<Type>>,
+        fn_list: Vec<u8>,
+    },
     Pointer(Box<Type>),
 }
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Primitive(p1), Self::Primitive(p2)) => p1 == p2,
+            (Self::Struct { name: n1, .. }, Self::Struct { name: n2, .. }) => n1 == n2,
+            (Self::Class { name: n1, .. }, Self::Class { name: n2, .. }) => n1 == n2,
+            (Self::Pointer(t1), Self::Pointer(t2)) => t1 == t2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Type {}
 
 impl Type {
     pub fn deref(&self) -> Result<Self, &'static str> {
@@ -35,14 +63,14 @@ impl Type {
 
     pub fn get_size(&self) -> u16 {
         match self {
-            Self::UserDef { size, .. } => *size,
+            Self::Struct { size, .. } => *size,
             _ => 1,
         }
     }
 
     pub fn field_list(&self) -> Result<&HashMap<String, (u8, String)>, &'static str> {
         match self {
-            Self::UserDef { field_list, .. } => Ok(field_list),
+            Self::Struct { field_list, .. } => Ok(field_list),
             _ => Err("No field list for this type"),
         }
     }
@@ -82,24 +110,34 @@ impl TypeBuilder {
 }
 
 pub struct TypeTable {
-    table: HashMap<String, Type>,
+    table: HashMap<String, Arc<Type>>,
 }
 
 impl Default for TypeTable {
     fn default() -> Self {
         let mut table = HashMap::new();
-        table.insert("int".to_string(), Type::Primitive(PrimitiveType::Int));
-        table.insert("str".to_string(), Type::Primitive(PrimitiveType::Str));
+        table.insert(
+            "int".to_string(),
+            Arc::new(Type::Primitive(PrimitiveType::Int)),
+        );
+        table.insert(
+            "str".to_string(),
+            Arc::new(Type::Primitive(PrimitiveType::Str)),
+        );
         Self { table }
     }
 }
 
 impl TypeTable {
     pub fn get(&self, tname: &str) -> Option<Type> {
+        self.table.get(tname).map(|ptr| ptr.as_ref().clone())
+    }
+
+    pub fn get_pointer(&self, tname: &str) -> Option<Arc<Type>> {
         self.table.get(tname).cloned()
     }
 
-    pub fn insert(
+    pub fn insert_struct(
         &mut self,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
         tspan: Span,
@@ -113,8 +151,10 @@ impl TypeTable {
             return Err((Some(tspan), "This type have more than 8 fields"));
         }
         let mut field_list = HashMap::new();
-        self.table
-            .insert(tname.to_string(), Type::Primitive(PrimitiveType::Void));
+        self.table.insert(
+            tname.to_string(),
+            Arc::new(Type::Primitive(PrimitiveType::Void)),
+        );
         for (i, (ftype_span, fname_span)) in fspan_list.iter().enumerate() {
             let ftype = lexer.span_str(*ftype_span);
             let fname = lexer.span_str(*fname_span);
@@ -130,10 +170,11 @@ impl TypeTable {
         }
         self.table.insert(
             tname.to_string(),
-            Type::UserDef {
+            Arc::new(Type::Struct {
+                name: tname.to_string(),
                 size: fspan_list.len() as u16,
                 field_list,
-            },
+            }),
         );
         Ok(())
     }

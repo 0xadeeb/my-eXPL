@@ -4,6 +4,7 @@ use lrpar::{NonStreamingLexer, Span};
 use crate::{frontend::PARSER, type_table::*};
 use std::collections::{HashMap, LinkedList};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymbolTable {
     table: HashMap<String, Symbol>,
     size: i16,
@@ -52,7 +53,7 @@ impl SymbolTable {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Symbol {
     Variable {
         name: String,
