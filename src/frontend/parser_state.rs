@@ -10,24 +10,28 @@ use crate::symbol::{Symbol, SymbolTable};
 use crate::type_table::{PrimitiveType, Type, TypeTable};
 use crate::utils::label::LabelGenerator;
 
+// This DS was basically made so that I don't have to keep track of multiple
+// global variables and just one global variable which will return references
+// of global symbol table, type table, label generator etc when a function needs to use it
+// Ideally only some fields like local symbol table and current fn/class is required in this DS
 pub struct ParserState {
-    gst: SymbolTable,
-    lst: SymbolTable,
-    label: LabelGenerator,
-    tt: TypeTable,
-    cfn: Option<Symbol>,
-    cur_class: Option<Type>,
-    fn_ast_list: LinkedList<FnAst>,
+    global_symbtab: SymbolTable,
+    local_symbtab: SymbolTable,
+    label: LabelGenerator, // Lable generator for a new function which is being parser
+    type_table: TypeTable,
+    current_fn: Option<Symbol>, // Current function that is being parser
+    cur_class: Option<Type>,    // Current class that is being parser
+    fn_ast_list: LinkedList<FnAst>, // Linked list of all functions that is pasered
 }
 
 impl Default for ParserState {
     fn default() -> Self {
         ParserState {
-            gst: SymbolTable::default(),
-            lst: SymbolTable::default(),
-            tt: TypeTable::default(),
+            global_symbtab: SymbolTable::default(),
+            local_symbtab: SymbolTable::default(),
+            type_table: TypeTable::default(),
             label: LabelGenerator::default(),
-            cfn: None,
+            current_fn: None,
             cur_class: None,
             fn_ast_list: LinkedList::new(),
         }
@@ -36,45 +40,50 @@ impl Default for ParserState {
 
 impl ParserState {
     pub fn gst(&mut self) -> &mut SymbolTable {
-        &mut self.gst
+        &mut self.global_symbtab
     }
 
     pub fn lst(&mut self) -> &mut SymbolTable {
-        &mut self.lst
+        &mut self.local_symbtab
     }
 
     pub fn flabel(&mut self) -> &mut LabelGenerator {
         &mut self.label
     }
 
+    // Returns the defined return type of the current function bieng parser
     pub fn cfn_rtype(&self) -> Type {
-        match self.cfn {
+        match self.current_fn {
             Some(ref s) => s.get_type(),
             None => Type::Primitive(PrimitiveType::Int),
         }
     }
 
+    // Returns the defined parameter list of the current function bieng parser
     pub fn cfn_params(&self) -> LinkedList<(Type, String)> {
-        match self.cfn {
+        match self.current_fn {
             Some(ref s) => s.get_params().unwrap(),
             None => LinkedList::new(),
         }
     }
 
     pub fn cfn(&self) -> Option<&Symbol> {
-        self.cfn.as_ref()
+        self.current_fn.as_ref()
     }
 
     pub fn tt(&mut self) -> &mut TypeTable {
-        &mut self.tt
+        &mut self.type_table
     }
 
+    // When a new function is about to be parser (after an fname is parser)
+    // the state of the parser is update to store the symbol of the
+    // new function in the parser state DS
     pub fn update_state<'t>(&mut self, fname: &'t str) -> Result<&'t str, &'static str> {
-        self.lst = SymbolTable::default();
-        self.cfn = match fname {
+        self.local_symbtab = SymbolTable::default();
+        self.current_fn = match fname {
             "" => None,
             _ => Some(
-                self.gst
+                self.global_symbtab
                     .get(fname)
                     .filter(|s| matches!(s, Symbol::Function { .. }))
                     .ok_or("Function was not defined")?
@@ -85,16 +94,17 @@ impl ParserState {
     }
 
     pub fn get_var(&self, name: &str) -> Result<Symbol, &'static str> {
-        self.lst
+        self.local_symbtab
             .get(name)
             .or(self
-                .gst
+                .global_symbtab
                 .get(name)
                 .filter(|s| !matches!(s, Symbol::Function { .. })))
             .cloned()
             .ok_or("Variable was not declared")
     }
 
+    // Not complete, indented to set new class in cur_class field of the parser state DS
     pub fn set_class(
         &mut self,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,

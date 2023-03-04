@@ -168,10 +168,11 @@ impl Tnode {
     }
 }
 
+// DS used to store all data about a parsed function
 pub struct FnAst {
-    root: Tnode,
-    label: i16,
-    lvar_count: i16,
+    root: Tnode,     // AST root
+    label: i16,      // Label of the function
+    lvar_count: i16, // local variable count
 }
 
 impl FnAst {

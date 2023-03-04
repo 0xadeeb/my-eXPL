@@ -4,6 +4,7 @@ use lrpar::{NonStreamingLexer, Span};
 use crate::{frontend::PARSER, type_table::*};
 use std::collections::{HashMap, LinkedList};
 
+// This DS should trivial
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymbolTable {
     table: HashMap<String, Symbol>,
@@ -53,6 +54,7 @@ impl SymbolTable {
     }
 }
 
+// This stored data about each symbol
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Symbol {
     Variable {
@@ -70,7 +72,7 @@ pub enum Symbol {
     Function {
         name: String,
         label: i16,
-        dtype: Type,
+        ret_type: Type,
         params: LinkedList<(Type, String)>,
     },
 }
@@ -88,14 +90,16 @@ impl Symbol {
         match self {
             Self::Variable { dtype, .. }
             | Self::Array { dtype, .. }
-            | Self::Function { dtype, .. } => dtype.clone(),
+            | Self::Function {
+                ret_type: dtype, ..  // Ideally should have another method, but does it really matter?
+            } => dtype.clone(),
         }
     }
 
     pub fn get_address(&self) -> i16 {
         match self {
             Self::Variable { binding, .. } | Self::Array { binding, .. } => binding.clone(),
-            Self::Function { label, .. } => label.clone() as i16,
+            Self::Function { label, .. } => label.clone() as i16, // Ideally should have another method, but does it really matter?
         }
     }
 
@@ -121,6 +125,12 @@ impl Symbol {
     }
 }
 
+// At times data about the whole symbol will only be parsered in mutpile rule
+// for example to parse the symbol "bar" in
+// int foo, **bar
+// "*'s are parser in a rule then the name of the symbol in another rule and then the type
+// "int" will be only parser at last, and the type name "int",
+// so I thought to use a type builder to build the type incrementally
 pub struct SymbolBuilder {
     name: Span,
     binding: Option<i16>,
@@ -208,7 +218,7 @@ impl SymbolBuilder {
             Ok(Symbol::Function {
                 name: lexer.span_str(self.name).to_string(),
                 label: self.label.unwrap(),
-                dtype: self.dtype.build()?,
+                ret_type: self.dtype.build()?,
                 params,
             })
         } else {

@@ -17,6 +17,7 @@ pub enum PrimitiveType {
     Null,
 }
 
+// This ds is used to store information about types
 #[derive(Debug, Clone)]
 pub enum Type {
     Primitive(PrimitiveType),
@@ -76,6 +77,9 @@ impl Type {
     }
 }
 
+// At times data about the whole type will only be parsered in mutpile rule
+// for example to parse a type ***int, it should recccursivly parser "*"s
+// and the type name "int", so I thought to use a type builder to build the type incrementally
 pub struct TypeBuilder {
     pointer: u16,
     dtype: Option<Type>,
@@ -109,6 +113,7 @@ impl TypeBuilder {
     }
 }
 
+// This DS should trivial
 pub struct TypeTable {
     table: HashMap<String, Arc<Type>>,
 }

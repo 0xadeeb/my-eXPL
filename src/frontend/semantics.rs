@@ -1,3 +1,5 @@
+// A lot of parser helper functions which also does semantic analysis
+
 use crate::{ast::*, frontend::PARSER, symbol::*, type_table::*};
 use lrlex::DefaultLexeme;
 use lrpar::{Lexeme, NonStreamingLexer, Span};
