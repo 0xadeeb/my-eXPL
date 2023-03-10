@@ -1,7 +1,10 @@
 use lrlex::lrlex_mod;
 use lrpar::{lrpar_mod, NonStreamingLexer};
-use myexpl::backend::{code_gen::CodeGen, linker};
-use std::{env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
+use myexpl::{
+    backend::{code_gen::CodeGen, linker},
+    frontend::parser_state::ParserState,
+};
+use std::{cell::RefCell, env, error::Error, ffi::OsStr, fs::File, io::Read, path::PathBuf};
 
 // Using `lrlex_mod!` brings the lexer for `lexer.l` into scope. By default the
 // module name will be `lexer_l` (i.e. the file name, minus any extensions,
@@ -37,20 +40,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let lexerdef = lexer_l::lexerdef();
     let lexer = lexerdef.lexer(&input);
-    // Pass the lexer to the parser and lex and parse the input.
-    let (res, errs) = parser_y::parse(&lexer);
+
+    let p = RefCell::new(ParserState::default());
+    let (res, errs) = parser_y::parse(&lexer, &p);
+
     if errs.is_empty() == false {
         for e in errs {
             println!("{}", e.pp(&lexer, &parser_y::token_epp));
         }
-        eprintln!("Unable to evaluate expression!");
+        eprintln!("Unable to evaluate program!");
         std::process::exit(1);
     }
     let obj_file = input_file.with_extension("obj");
     match res {
-        Some(Ok((fns, gst_size))) => {
+        Some(Ok(_virt_fn_list)) => {
             let mut code_generator = CodeGen::new(&obj_file)?;
-            match code_generator.emit_code(&fns, gst_size) {
+            let gst_size = p.borrow().gst().get_size().to_owned();
+            match code_generator.emit_code(p.borrow_mut().fn_list(), gst_size) {
                 Ok(()) => {
                     let output_file = input_file.with_extension("xsm");
                     let input = get_input(&obj_file)?;

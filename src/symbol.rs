@@ -1,14 +1,14 @@
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 
-use crate::{frontend::PARSER, type_table::*};
+use crate::{type_table::*, utils::label::LabelGenerator};
 use std::collections::{HashMap, LinkedList};
 
 // This DS should trivial
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct SymbolTable {
     table: HashMap<String, Symbol>,
-    size: i16,
+    size: u16,
 }
 
 impl Default for SymbolTable {
@@ -21,8 +21,8 @@ impl Default for SymbolTable {
 }
 
 impl SymbolTable {
-    pub fn get_size(&self) -> i16 {
-        self.size
+    pub fn get_size(&self) -> &u16 {
+        &self.size
     }
     pub fn get(&self, name: &str) -> Option<&Symbol> {
         self.table.get(name)
@@ -31,6 +31,7 @@ impl SymbolTable {
         &mut self,
         mut s: SymbolBuilder,
         base: i16,
+        tt: &TypeTable,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     ) -> Result<(), &'static str> {
         let name = lexer.span_str(s.get_name());
@@ -38,18 +39,19 @@ impl SymbolTable {
             return Err("Variable declared multiple times");
         }
         if !s.is_func() {
-            s.binding(base + self.size);
-            self.size += s.get_dim().iter().fold(1, |acc, &x| acc * x);
+            s.binding(base + self.size as i16);
+            self.size += s.get_size(tt);
         }
         self.table.insert(name.to_string(), s.build(lexer).unwrap());
         Ok(())
     }
 
-    pub fn insert_arg(&mut self, s: Symbol) -> Result<(), &'static str> {
-        if self.table.contains_key(s.get_name()) {
-            return Err("Multiple variables with same name in scope of this function");
+    pub fn insert_symbol(&mut self, s: Symbol, check: bool) -> Result<(), &'static str> {
+        if check && self.table.contains_key(s.get_name()) {
+            return Err("Multiple variables with same name defined");
         }
         self.table.insert(s.get_name().to_string(), s);
+        // FIXME: Gotta add size
         Ok(())
     }
 }
@@ -63,15 +65,10 @@ pub enum Symbol {
         dtype: Type,
         is_static: bool,
     },
-    Array {
-        name: String,
-        binding: i16,
-        dim: Vec<i16>,
-        dtype: Type,
-    },
     Function {
         name: String,
-        label: i16,
+        label: u8,
+        idx: Option<u8>,
         ret_type: Type,
         params: LinkedList<(Type, String)>,
     },
@@ -80,39 +77,50 @@ pub enum Symbol {
 impl Symbol {
     pub fn get_name(&self) -> &str {
         match self {
-            Self::Variable { name, .. }
-            | Self::Array { name, .. }
-            | Self::Function { name, .. } => name,
+            Self::Variable { name, .. } | Self::Function { name, .. } => name,
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> &Type {
         match self {
             Self::Variable { dtype, .. }
-            | Self::Array { dtype, .. }
             | Self::Function {
                 ret_type: dtype, ..  // Ideally should have another method, but does it really matter?
-            } => dtype.clone(),
+            } => dtype,
         }
     }
 
-    pub fn get_address(&self) -> i16 {
+    pub fn get_dim(&self) -> Result<u8, &'static str> {
         match self {
-            Self::Variable { binding, .. } | Self::Array { binding, .. } => binding.clone(),
-            Self::Function { label, .. } => label.clone() as i16, // Ideally should have another method, but does it really matter?
+            Self::Variable { dtype, .. } => Ok(dtype.get_dim()),
+            _ => Err("No dimention for functions"),
         }
     }
 
-    pub fn get_dim(&self) -> i16 {
+    pub fn get_binding(&self) -> Result<&i16, &'static str> {
         match self {
-            Self::Array { dim, .. } => dim.len() as i16,
-            _ => 0,
+            Self::Variable { binding, .. } => Ok(binding),
+            _ => Err("This symbol is bound to an address"),
         }
     }
 
-    pub fn get_params(&self) -> Result<LinkedList<(Type, String)>, &'static str> {
+    pub fn get_label(&self) -> Result<&u8, &'static str> {
         match self {
-            Self::Function { params, .. } => Ok(params.clone()),
+            Self::Function { label, .. } => Ok(label),
+            Self::Variable { .. } => Err("This symbol is has no label"),
+        }
+    }
+
+    pub fn get_idx(&self) -> Result<u8, &'static str> {
+        match self {
+            Self::Function { idx, .. } => idx.ok_or("This function has no index"),
+            Self::Variable { binding, .. } => Ok(*binding as u8),
+        }
+    }
+
+    pub fn get_params(&self) -> Result<&LinkedList<(Type, String)>, &'static str> {
+        match self {
+            Self::Function { params, .. } => Ok(params),
             _ => Err("The symbol was not of a function"),
         }
     }
@@ -136,8 +144,8 @@ pub struct SymbolBuilder {
     binding: Option<i16>,
     is_static: bool,
     dtype: TypeBuilder,
-    dim: Option<Vec<i16>>,
-    label: Option<i16>,
+    label: Option<u8>,
+    idx: Option<u8>,
     params: Option<LinkedList<(Type, String)>>,
 }
 
@@ -148,7 +156,7 @@ impl SymbolBuilder {
             binding: None,
             is_static,
             dtype: TypeBuilder::new(),
-            dim: None,
+            idx: None,
             label: None,
             params: None,
         }
@@ -158,19 +166,16 @@ impl SymbolBuilder {
         self.name
     }
 
-    pub fn get_dim(&self) -> Vec<i16> {
-        match &self.dim {
-            Some(d) => d.clone(),
-            None => Vec::new(),
-        }
+    pub fn get_size(&self, tt: &TypeTable) -> u16 {
+        self.dtype.get_size(tt)
     }
 
     pub fn is_func(&self) -> bool {
         !matches!(self.params, None)
     }
 
-    pub fn dim(&mut self, dim: Vec<i16>) -> &mut Self {
-        self.dim = Some(dim);
+    pub fn dim(&mut self, dim: Vec<u8>) -> &mut Self {
+        self.dtype.dim(dim);
         self
     }
 
@@ -179,9 +184,19 @@ impl SymbolBuilder {
         self
     }
 
-    pub fn params(&mut self, params: LinkedList<(Type, String)>) -> &mut SymbolBuilder {
-        self.params = Some(params);
-        self.label = Some(PARSER.lock().unwrap().flabel().get());
+    pub fn params(
+        &mut self,
+        params: LinkedList<(Type, Span)>,
+        flabel: &mut LabelGenerator,
+        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+    ) -> &mut SymbolBuilder {
+        self.params = Some(
+            params
+                .into_iter()
+                .map(|(dtype, span)| (dtype, lexer.span_str(span).to_owned()))
+                .collect(),
+        );
+        self.label = Some(flabel.get() as u8);
         self
     }
 
@@ -200,25 +215,18 @@ impl SymbolBuilder {
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     ) -> Result<Symbol, &'static str> {
         if let Some(binding) = self.binding {
-            match self.dim {
-                None => Ok(Symbol::Variable {
-                    name: lexer.span_str(self.name).to_string(),
-                    binding: binding as i16,
-                    dtype: self.dtype.build()?,
-                    is_static: self.is_static,
-                }),
-                Some(dim) => Ok(Symbol::Array {
-                    name: lexer.span_str(self.name).to_string(),
-                    binding,
-                    dim,
-                    dtype: self.dtype.build()?,
-                }),
-            }
+            Ok(Symbol::Variable {
+                name: lexer.span_str(self.name).to_string(),
+                binding: binding as i16,
+                dtype: self.dtype.build()?,
+                is_static: self.is_static,
+            })
         } else if let Some(params) = self.params {
             Ok(Symbol::Function {
                 name: lexer.span_str(self.name).to_string(),
                 label: self.label.unwrap(),
                 ret_type: self.dtype.build()?,
+                idx: self.idx,
                 params,
             })
         } else {

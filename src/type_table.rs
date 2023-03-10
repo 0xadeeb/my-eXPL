@@ -1,55 +1,115 @@
-use std::{
-    collections::{HashMap, LinkedList},
-    sync::{Arc, Weak},
-};
+use std::collections::{HashMap, HashSet, LinkedList};
 
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 
-use crate::symbol::SymbolTable;
+use crate::{
+    symbol::{Symbol, SymbolTable},
+    utils::label::LabelGenerator,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimitiveType {
+#[derive(Debug, Clone)]
+pub enum UserDefType {
+    Struct {
+        name: String,
+        sst: SymbolTable, // struct symbol table
+    },
+    Class {
+        name: String,
+        cst: SymbolTable, // class symbol table
+        idx: u8,
+        parent: Option<String>,
+        fn_list: Vec<u8>,
+    },
+}
+
+impl UserDefType {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::Struct { name, .. } | Self::Class { name, .. } => name,
+        }
+    }
+
+    pub fn get_parent(&self) -> Result<&Option<String>, ()> {
+        match self {
+            Self::Class { parent, .. } => Ok(parent),
+            Self::Struct { .. } => Err(()),
+        }
+    }
+
+    pub fn get_fns(&self) -> Result<&Vec<u8>, &'static str> {
+        match self {
+            Self::Class { fn_list, .. } => Ok(fn_list),
+            _ => Err("Struct has no methods"),
+        }
+    }
+
+    pub fn to_type(&self) -> Type {
+        match self.get_name() {
+            "int" => Type::Int,
+            "str" => Type::Str,
+            name @ _ => Type::UserDef(name.to_owned()),
+        }
+    }
+
+    pub fn get_size(&self) -> &u16 {
+        match self {
+            Self::Struct { .. } => &1,
+            Self::Class { .. } => &2,
+        }
+    }
+
+    pub fn get_ptr_size(&self) -> &u16 {
+        match self {
+            Self::Struct { sst, .. } => sst.get_size(),
+            Self::Class { cst, .. } => cst.get_size(),
+        }
+    }
+
+    pub fn get_st(&self) -> &SymbolTable {
+        match self {
+            Self::Struct { sst, .. } => sst,
+            Self::Class { cst, .. } => cst,
+        }
+    }
+
+    pub fn get_st_mut(&mut self) -> &mut SymbolTable {
+        match self {
+            Self::Struct { sst, .. } => sst,
+            Self::Class { cst, .. } => cst,
+        }
+    }
+
+    pub fn get_parent_st(&self, tt: &TypeTable) -> Result<SymbolTable, &'static str> {
+        match self {
+            Self::Class { parent, .. } => match parent {
+                Some(p) => Ok(tt.get(p).unwrap().get_st().clone()),
+                None => Ok(SymbolTable::default()),
+            },
+            _ => Err("No parent for structure"),
+        }
+    }
+
+    pub fn set_id(&mut self, id: u8) {
+        match self {
+            Self::Class { idx, .. } => *idx = id,
+            _ => {}
+        }
+    }
+}
+
+// This ds is used to store information about types
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
     Void,
     Int,
     Bool,
     Str,
     Null,
-}
-
-// This ds is used to store information about types
-#[derive(Debug, Clone)]
-pub enum Type {
-    Primitive(PrimitiveType),
-    Struct {
-        name: String,
-        size: u16,
-        field_list: HashMap<String, (u8, String)>, // map(variable name -> (field idx, type name))
-    },
-    Class {
-        name: String,
-        cst: SymbolTable,
-        idx: u8,
-        size: u16,
-        parent: Option<Weak<Type>>,
-        fn_list: Vec<u8>,
-    },
+    UserDef(String),
     Pointer(Box<Type>),
+    Array { dtype: Box<Type>, dim: Vec<u8> },
 }
-
-impl PartialEq for Type {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Primitive(p1), Self::Primitive(p2)) => p1 == p2,
-            (Self::Struct { name: n1, .. }, Self::Struct { name: n2, .. }) => n1 == n2,
-            (Self::Class { name: n1, .. }, Self::Class { name: n2, .. }) => n1 == n2,
-            (Self::Pointer(t1), Self::Pointer(t2)) => t1 == t2,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for Type {}
 
 impl Type {
     pub fn deref(&self) -> Result<Self, &'static str> {
@@ -58,21 +118,36 @@ impl Type {
             _ => Err("Dereferencing not defined for this variable type"),
         }
     }
+
     pub fn rref(&self) -> Result<Self, &'static str> {
         Ok(Type::Pointer(Box::new(self.clone())))
     }
 
-    pub fn get_size(&self) -> u16 {
+    pub fn get_name(&self) -> Result<&str, &'static str> {
         match self {
-            Self::Struct { size, .. } => *size,
-            _ => 1,
+            Type::UserDef(name) => Ok(name),
+            _ => Err("No name for this type"),
         }
     }
 
-    pub fn field_list(&self) -> Result<&HashMap<String, (u8, String)>, &'static str> {
+    pub fn get_size<'t>(&self, tt: &'t TypeTable) -> &'t u16 {
         match self {
-            Self::Struct { field_list, .. } => Ok(field_list),
-            _ => Err("No field list for this type"),
+            Self::UserDef(name) => tt.get(name).unwrap().get_size(),
+            _ => &1,
+        }
+    }
+
+    pub fn get_dim(&self) -> u8 {
+        match self {
+            Self::Array { dim, .. } => dim.len() as u8,
+            _ => 0,
+        }
+    }
+
+    pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, &'static str> {
+        match self {
+            Self::UserDef(name) => Ok(tt.get(name).unwrap().get_st()),
+            _ => Err("No symbol table for this type"),
         }
     }
 }
@@ -82,6 +157,7 @@ impl Type {
 // and the type name "int", so I thought to use a type builder to build the type incrementally
 pub struct TypeBuilder {
     pointer: u16,
+    dim: Option<Vec<u8>>,
     dtype: Option<Type>,
 }
 
@@ -89,8 +165,24 @@ impl TypeBuilder {
     pub fn new() -> Self {
         TypeBuilder {
             pointer: 0,
+            dim: None,
             dtype: None,
         }
+    }
+
+    pub fn get_size(&self, tt: &TypeTable) -> u16 {
+        let acc = match self.dtype.as_ref().unwrap() {
+            Type::UserDef(tname) => match tt.get(&tname).unwrap() {
+                UserDefType::Class { .. } => 2,
+                _ => 1,
+            },
+            _ => 1,
+        };
+        self.dim
+            .clone()
+            .unwrap_or_default()
+            .iter()
+            .fold(acc, |acc, d| acc * d) as u16
     }
 
     pub fn set_pointer(&mut self) -> &mut Self {
@@ -103,11 +195,25 @@ impl TypeBuilder {
         self
     }
 
+    pub fn dim(&mut self, dim: Vec<u8>) -> &mut Self {
+        self.dim = Some(dim);
+        self
+    }
+
     pub fn build(self) -> Result<Type, &'static str> {
         match self.dtype {
-            Some(t) => Ok((0..self.pointer)
-                .into_iter()
-                .fold(t, |acc, _| acc.rref().unwrap())),
+            Some(t) => {
+                let new_type = (0..self.pointer)
+                    .into_iter()
+                    .fold(t, |acc, _| acc.rref().unwrap());
+                match self.dim {
+                    Some(d) => Ok(Type::Array {
+                        dtype: Box::new(new_type),
+                        dim: d,
+                    }),
+                    None => Ok(new_type),
+                }
+            }
             None => Err("Inner type was not set!"),
         }
     }
@@ -115,72 +221,207 @@ impl TypeBuilder {
 
 // This DS should trivial
 pub struct TypeTable {
-    table: HashMap<String, Arc<Type>>,
+    table: HashMap<String, UserDefType>,
 }
 
 impl Default for TypeTable {
     fn default() -> Self {
         let mut table = HashMap::new();
         table.insert(
-            "int".to_string(),
-            Arc::new(Type::Primitive(PrimitiveType::Int)),
+            "int".to_owned(),
+            UserDefType::Struct {
+                name: "int".to_owned(),
+                sst: SymbolTable::default(),
+            },
         );
         table.insert(
-            "str".to_string(),
-            Arc::new(Type::Primitive(PrimitiveType::Str)),
+            "str".to_owned(),
+            UserDefType::Struct {
+                name: "str".to_owned(),
+                sst: SymbolTable::default(),
+            },
         );
         Self { table }
     }
 }
 
 impl TypeTable {
-    pub fn get(&self, tname: &str) -> Option<Type> {
-        self.table.get(tname).map(|ptr| ptr.as_ref().clone())
+    pub fn get(&self, tname: &str) -> Option<&UserDefType> {
+        self.table.get(tname)
     }
 
-    pub fn get_pointer(&self, tname: &str) -> Option<Arc<Type>> {
-        self.table.get(tname).cloned()
+    pub fn new_struct(
+        &mut self,
+        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+        tspan: Span,
+    ) -> Result<Type, (Option<Span>, &'static str)> {
+        let tname = lexer.span_str(tspan);
+        if self.table.contains_key(tname) {
+            return Err((Some(tspan), "Type declared multiple times"));
+        }
+
+        self.table.insert(
+            tname.to_string(),
+            UserDefType::Struct {
+                name: tname.to_string(),
+                sst: SymbolTable::default(),
+            },
+        );
+        Ok(Type::UserDef(tname.to_owned()))
+    }
+
+    pub fn set_cidx(&mut self, cname: &str, idx: u8) {
+        self.table.get_mut(cname).unwrap().set_id(idx)
     }
 
     pub fn insert_struct(
         &mut self,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-        tspan: Span,
-        fspan_list: LinkedList<(Span, Span)>,
+        span: Span,
+        dtype: Type,
+        field_list: LinkedList<(Type, Span)>, // list of type, name of the fields
     ) -> Result<(), (Option<Span>, &'static str)> {
-        let tname = lexer.span_str(tspan);
-        if self.table.contains_key(tname) {
-            return Err((Some(tspan), "Type declared multiple times"));
-        }
-        if fspan_list.len() > 8 {
-            return Err((Some(tspan), "This type have more than 8 fields"));
-        }
-        let mut field_list = HashMap::new();
-        self.table.insert(
-            tname.to_string(),
-            Arc::new(Type::Primitive(PrimitiveType::Void)),
-        );
-        for (i, (ftype_span, fname_span)) in fspan_list.iter().enumerate() {
-            let ftype = lexer.span_str(*ftype_span);
+        let tname = dtype.get_name().unwrap();
+        let sst = self.table.get_mut(tname).unwrap().get_st_mut();
+        for (i, (ftype, fname_span)) in field_list.iter().enumerate() {
             let fname = lexer.span_str(*fname_span);
-            if self.table.contains_key(ftype) {
-                if !field_list.contains_key(fname) {
-                    field_list.insert(fname.to_string(), (i as u8 + 1, ftype.to_string()));
-                } else {
-                    return Err((Some(*fname_span), "This field is defined multiple times"));
-                }
-            } else {
-                return Err((Some(*ftype_span), "This type is not defined"));
+            sst.insert_symbol(
+                Symbol::Variable {
+                    name: fname.to_string(),
+                    binding: i as i16,
+                    dtype: ftype.clone(),
+                    is_static: false,
+                },
+                true,
+            )
+            .map_err(|msg| (Some(*fname_span), msg))?;
+        }
+        if sst.get_size().to_owned() > 8 {
+            return Err((Some(span), "This type takes up more than 8 words"));
+        }
+        Ok(())
+    }
+
+    pub fn set_class(
+        &mut self,
+        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+        class: Span,
+        pspan: Option<Span>,
+    ) -> Result<Type, (Option<Span>, &'static str)> {
+        let cname = lexer.span_str(class);
+        if self.table.contains_key(cname) {
+            return Err((Some(class), "Type with same name previously defined"));
+        }
+
+        let parent = match pspan {
+            Some(p) => self
+                .table
+                .get(lexer.span_str(p))
+                .filter(|t| matches!(t, UserDefType::Class { .. }))
+                .ok_or((Some(p), "Parent class not defined"))?
+                .into(),
+            None => None,
+        };
+
+        self.table.insert(
+            cname.to_owned(),
+            UserDefType::Class {
+                name: cname.to_owned(),
+                cst: parent.map(|p| p.get_st().clone()).unwrap_or_default(),
+                idx: 0,
+                parent: parent.map(|p| p.get_name().to_owned()),
+                fn_list: parent
+                    .map(|p| p.get_fns().unwrap().clone())
+                    .unwrap_or_default(),
+            },
+        );
+
+        Ok(Type::UserDef(cname.to_owned()))
+    }
+
+    pub fn insert_cst(
+        &mut self,
+        span: Span,
+        cname: &str,
+        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+        field_list: LinkedList<(Type, Span)>,
+        method_list: LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,
+        flabel: &mut LabelGenerator,
+    ) -> Result<Vec<u8>, (Option<Span>, &'static str)> {
+        let entry = self.table.get(cname).unwrap();
+        let mut cst = entry.get_st().clone();
+        let mut fn_list = entry.get_fns().unwrap().clone();
+
+        for (i, (ftype, fname_span)) in field_list.iter().enumerate() {
+            let fname = lexer.span_str(*fname_span);
+            cst.insert_symbol(
+                Symbol::Variable {
+                    name: fname.to_string(),
+                    binding: i as i16,
+                    dtype: ftype.clone(),
+                    is_static: false,
+                },
+                true,
+            )
+            .map_err(|msg| (Some(*fname_span), msg))?;
+        }
+
+        let parent_st = entry.get_parent_st(&self).unwrap();
+        let mut method_set = HashSet::new();
+
+        for (rtype, name_span, param_list) in method_list.iter() {
+            let name = lexer.span_str(*name_span);
+            if method_set.contains(name) {
+                return Err((
+                    Some(*name_span),
+                    "This method is defined multiple times in this class",
+                ));
             }
+            let label = flabel.get();
+            match parent_st.get(name) {
+                Some(method) => {
+                    let idx = method.get_idx().unwrap();
+                    fn_list[idx as usize] = label as u8;
+                }
+                None => {
+                    fn_list.push(label as u8);
+                    cst.insert_symbol(
+                        Symbol::Function {
+                            name: name.to_owned(),
+                            label: label as u8,
+                            idx: Some(fn_list.len() as u8 - 1),
+                            ret_type: rtype.clone(),
+                            params: param_list
+                                .iter()
+                                .map(|(dtype, pname)| {
+                                    (dtype.clone(), lexer.span_str(*pname).to_string())
+                                })
+                                .collect(),
+                        },
+                        false,
+                    )
+                    .map_err(|msg| (Some(*name_span), msg))?;
+                }
+            }
+            method_set.insert(name.to_owned());
+        }
+
+        if cst.get_size().to_owned() > 8 {
+            return Err((Some(span), "This type takes up more than 8 words"));
+        }
+        if fn_list.len() > 8 {
+            return Err((Some(span), "This type has more than 8 methods"));
         }
         self.table.insert(
-            tname.to_string(),
-            Arc::new(Type::Struct {
-                name: tname.to_string(),
-                size: fspan_list.len() as u16,
-                field_list,
-            }),
+            cname.to_owned(),
+            UserDefType::Class {
+                name: cname.to_owned(),
+                cst,
+                idx: 0,
+                parent: entry.get_parent().unwrap().clone(),
+                fn_list: fn_list.clone(),
+            },
         );
-        Ok(())
+        Ok(fn_list.clone())
     }
 }

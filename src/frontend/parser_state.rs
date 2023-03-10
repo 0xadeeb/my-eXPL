@@ -1,13 +1,12 @@
 use std::collections::LinkedList;
 use std::default::Default;
-use std::sync::Arc;
 
 use lrlex::DefaultLexeme;
-use lrpar::{NonStreamingLexer, Span};
+use lrpar::{Lexeme, NonStreamingLexer, Span};
 
 use crate::ast::FnAst;
 use crate::symbol::{Symbol, SymbolTable};
-use crate::type_table::{PrimitiveType, Type, TypeTable};
+use crate::type_table::{Type, TypeTable};
 use crate::utils::label::LabelGenerator;
 
 // This DS was basically made so that I don't have to keep track of multiple
@@ -15,54 +14,68 @@ use crate::utils::label::LabelGenerator;
 // of global symbol table, type table, label generator etc when a function needs to use it
 // Ideally only some fields like local symbol table and current fn/class is required in this DS
 pub struct ParserState {
-    global_symbtab: SymbolTable,
-    local_symbtab: SymbolTable,
-    label: LabelGenerator, // Lable generator for a new function which is being parser
+    gst: SymbolTable,
+    lst: SymbolTable,
     type_table: TypeTable,
+    fn_list: LinkedList<FnAst>,
     current_fn: Option<Symbol>, // Current function that is being parser
     cur_class: Option<Type>,    // Current class that is being parser
-    fn_ast_list: LinkedList<FnAst>, // Linked list of all functions that is pasered
 }
 
 impl Default for ParserState {
     fn default() -> Self {
         ParserState {
-            global_symbtab: SymbolTable::default(),
-            local_symbtab: SymbolTable::default(),
+            gst: SymbolTable::default(),
+            lst: SymbolTable::default(),
             type_table: TypeTable::default(),
-            label: LabelGenerator::default(),
+            fn_list: LinkedList::new(),
             current_fn: None,
             cur_class: None,
-            fn_ast_list: LinkedList::new(),
         }
     }
 }
 
 impl ParserState {
-    pub fn gst(&mut self) -> &mut SymbolTable {
-        &mut self.global_symbtab
+    pub fn gst(&self) -> &SymbolTable {
+        &self.gst
     }
 
-    pub fn lst(&mut self) -> &mut SymbolTable {
-        &mut self.local_symbtab
+    pub fn gst_mut(&mut self) -> &mut SymbolTable {
+        &mut self.gst
     }
 
-    pub fn flabel(&mut self) -> &mut LabelGenerator {
-        &mut self.label
+    pub fn lst(&self) -> &SymbolTable {
+        &self.lst
+    }
+
+    pub fn lst_mut(&mut self) -> &mut SymbolTable {
+        &mut self.lst
+    }
+
+    pub fn tt(&self) -> &TypeTable {
+        &self.type_table
+    }
+
+    pub fn tt_mut(&mut self) -> &mut TypeTable {
+        &mut self.type_table
+    }
+
+    pub fn fn_list(&mut self) -> &mut LinkedList<FnAst> {
+        &mut self.fn_list
     }
 
     // Returns the defined return type of the current function bieng parser
-    pub fn cfn_rtype(&self) -> Type {
+    pub fn cfn_rtype(&self) -> &Type {
         match self.current_fn {
             Some(ref s) => s.get_type(),
-            None => Type::Primitive(PrimitiveType::Int),
+            None => &Type::Int,
         }
     }
 
     // Returns the defined parameter list of the current function bieng parser
     pub fn cfn_params(&self) -> LinkedList<(Type, String)> {
         match self.current_fn {
-            Some(ref s) => s.get_params().unwrap(),
+            Some(ref s) => s.get_params().unwrap().clone(),
             None => LinkedList::new(),
         }
     }
@@ -71,19 +84,15 @@ impl ParserState {
         self.current_fn.as_ref()
     }
 
-    pub fn tt(&mut self) -> &mut TypeTable {
-        &mut self.type_table
-    }
-
     // When a new function is about to be parser (after an fname is parser)
     // the state of the parser is update to store the symbol of the
     // new function in the parser state DS
     pub fn update_state<'t>(&mut self, fname: &'t str) -> Result<&'t str, &'static str> {
-        self.local_symbtab = SymbolTable::default();
+        self.lst = SymbolTable::default();
         self.current_fn = match fname {
             "" => None,
             _ => Some(
-                self.global_symbtab
+                self.gst
                     .get(fname)
                     .filter(|s| matches!(s, Symbol::Function { .. }))
                     .ok_or("Function was not defined")?
@@ -93,50 +102,56 @@ impl ParserState {
         Ok(fname)
     }
 
+    pub fn end_class(&mut self) {
+        self.cur_class = None;
+    }
+
+    pub fn check_self(
+        &self,
+        token: DefaultLexeme,
+    ) -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)> {
+        match self.cur_class {
+            Some(_) => Ok(token),
+            None => Err((Some(token.span()), "No self in this scope")),
+        }
+    }
+
     pub fn get_var(&self, name: &str) -> Result<Symbol, &'static str> {
-        self.local_symbtab
+        self.lst
             .get(name)
             .or(self
-                .global_symbtab
+                .gst
                 .get(name)
                 .filter(|s| !matches!(s, Symbol::Function { .. })))
             .cloned()
             .ok_or("Variable was not declared")
     }
 
-    // Not complete, indented to set new class in cur_class field of the parser state DS
-    pub fn set_class(
+    pub fn set_class<'ip>(
         &mut self,
-        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+        lexer: &dyn NonStreamingLexer<'ip, DefaultLexeme, u32>,
         class: Span,
         parent: Option<Span>,
-    ) -> Result<(), (Option<Span>, &'static str)> {
-        let cname = lexer.span_str(class);
-        let class_inst = match parent {
-            Some(pspan) => {
-                let pname = lexer.span_str(pspan);
-                match self.tt().get_pointer(pname) {
-                    Some(inst) => Type::Class {
-                        name: cname.to_string(),
-                        cst: SymbolTable::default(),
-                        idx: 0,
-                        size: 0,
-                        parent: Some(Arc::downgrade(&inst)),
-                        fn_list: Vec::new(),
-                    },
-                    None => return Err((parent, "Parent class not defined")),
-                }
-            }
-            None => Type::Class {
-                name: cname.to_string(),
-                cst: SymbolTable::default(),
-                idx: 0,
-                size: 0,
-                parent: None,
-                fn_list: Vec::new(),
-            },
-        };
-        self.cur_class = Some(class_inst);
-        Ok(())
+    ) -> Result<&'ip str, (Option<Span>, &'static str)> {
+        self.cur_class = Some(self.type_table.set_class(lexer, class, parent)?);
+        Ok(lexer.span_str(class))
+    }
+
+    pub fn insert_cst(
+        &mut self,
+        span: Span,
+        lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+        field_list: LinkedList<(Type, Span)>,
+        method_list: LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,
+        flabel: &mut LabelGenerator,
+    ) -> Result<Vec<u8>, (Option<Span>, &'static str)> {
+        self.type_table.insert_cst(
+            span,
+            self.cur_class.as_ref().unwrap().get_name().unwrap(),
+            lexer,
+            field_list,
+            method_list,
+            flabel,
+        )
     }
 }

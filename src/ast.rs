@@ -112,35 +112,35 @@ pub enum Tnode {
 }
 
 impl Tnode {
-    pub fn get_address(&self) -> Result<i16, Box<dyn Error>> {
+    pub fn get_address(&self) -> Result<&i16, Box<dyn Error>> {
         match self {
-            Tnode::Var { symbol, .. } => Ok(symbol.get_address()),
+            Tnode::Var { symbol, .. } => Ok(symbol.get_binding().unwrap()),
             _ => Err(Box::<dyn Error>::from(
                 "LHS of assign statment not variable",
             )),
         }
     }
 
-    pub fn get_type(&self) -> Type {
+    pub fn get_type(&self) -> &Type {
         match self {
-            Tnode::Var { dtype, .. } => dtype.clone(),
+            Tnode::Var { dtype, .. } => dtype,
             Tnode::FnCall { symbol, .. } => symbol.get_type(),
             Tnode::BinaryOperator { dtype, .. }
             | Tnode::Constant { dtype, .. }
             | Tnode::DeRefOperator { dtype, .. }
-            | Tnode::RefOperator { dtype, .. } => dtype.clone(),
-            Tnode::Null => Type::Primitive(PrimitiveType::Null),
-            _ => Type::Primitive(PrimitiveType::Void),
+            | Tnode::RefOperator { dtype, .. } => dtype,
+            Tnode::Null => &Type::Null,
+            _ => &Type::Void,
         }
     }
 
-    pub fn get_span(&self) -> Option<Span> {
+    pub fn get_span(&self) -> Option<&Span> {
         match self {
             Tnode::Var { span, .. }
             | Tnode::BinaryOperator { span, .. }
             | Tnode::Constant { span, .. }
             | Tnode::RefOperator { span, .. }
-            | Tnode::DeRefOperator { span, .. } => Some(span.clone()),
+            | Tnode::DeRefOperator { span, .. } => Some(span),
             _ => None,
         }
     }
@@ -170,26 +170,26 @@ impl Tnode {
 
 // DS used to store all data about a parsed function
 pub struct FnAst {
-    root: Tnode,     // AST root
-    label: i16,      // Label of the function
-    lvar_count: i16, // local variable count
+    root: Tnode,    // AST root
+    label: u8,      // Label of the function
+    lvar_count: u8, // local variable count
 }
 
 impl FnAst {
-    pub fn new(root: Tnode, label: i16, lvar_count: i16) -> Self {
+    pub fn new(root: Tnode, label: u8, lvar_count: u8) -> Self {
         Self {
             root,
             label,
             lvar_count,
         }
     }
-    pub fn get_label(&self) -> i16 {
+    pub fn get_label(&self) -> u8 {
         self.label
     }
     pub fn get_root(&self) -> &Tnode {
         &self.root
     }
-    pub fn get_lvar_count(&self) -> i16 {
+    pub fn get_lvar_count(&self) -> u8 {
         self.lvar_count
     }
 }
