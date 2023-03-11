@@ -1,5 +1,5 @@
 use lrlex::lrlex_mod;
-use lrpar::{lrpar_mod, NonStreamingLexer};
+use lrpar::lrpar_mod;
 use myexpl::{
     backend::{code_gen::CodeGen, linker},
     frontend::parser_state::ParserState,
@@ -70,19 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 e @ Err(_) => return e,
             }
         }
-        Some(Err((s, msg))) => match s {
-            Some(span) => {
-                let ((line, col), _) = lexer.line_col(span);
-                eprintln!(
-                    "Evaluation error at line {} column {}\n'{}'\n{}.",
-                    line,
-                    col,
-                    lexer.span_str(span),
-                    msg
-                )
-            }
-            None => eprint!("{msg},\nEvaluation error!"),
-        },
+        Some(Err(e)) => e.display(&lexer),
         None => eprintln!("Error Parsing"),
     }
     Ok(())

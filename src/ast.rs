@@ -145,7 +145,7 @@ impl Tnode {
         }
     }
 
-    pub fn set_ref(&mut self, r: RefType) -> Result<(), &'static str> {
+    pub fn set_ref(&mut self, r: RefType) -> Result<(), String> {
         match self {
             Tnode::Var {
                 ref mut ref_type, ..
@@ -156,14 +156,14 @@ impl Tnode {
                 *ref_type = r;
                 Ok(())
             }
-            _ => Err("Not a variable"),
+            _ => Err("Not a variable".to_owned()),
         }
     }
 
-    pub fn is_local(&self) -> Result<bool, &'static str> {
+    pub fn is_local(&self) -> Result<bool, String> {
         match self {
             Tnode::Var { symbol, .. } => Ok(symbol.is_local()),
-            _ => Err("Node not variable"),
+            _ => Err("Node not variable".to_owned()),
         }
     }
 }

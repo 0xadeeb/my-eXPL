@@ -5,6 +5,7 @@ use lrlex::DefaultLexeme;
 use lrpar::{Lexeme, NonStreamingLexer, Span};
 
 use crate::ast::FnAst;
+use crate::error::SemanticError;
 use crate::symbol::{Symbol, SymbolTable};
 use crate::type_table::{Type, TypeTable};
 use crate::utils::label::LabelGenerator;
@@ -87,7 +88,7 @@ impl ParserState {
     // When a new function is about to be parser (after an fname is parser)
     // the state of the parser is update to store the symbol of the
     // new function in the parser state DS
-    pub fn update_state<'t>(&mut self, fname: &'t str) -> Result<&'t str, &'static str> {
+    pub fn update_state<'t>(&mut self, fname: &'t str) -> Result<&'t str, String> {
         self.lst = SymbolTable::default();
         self.current_fn = match fname {
             "" => None,
@@ -106,17 +107,17 @@ impl ParserState {
         self.cur_class = None;
     }
 
-    pub fn check_self(
-        &self,
-        token: DefaultLexeme,
-    ) -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)> {
+    pub fn check_self(&self, token: DefaultLexeme) -> Result<DefaultLexeme<u32>, SemanticError> {
         match self.cur_class {
             Some(_) => Ok(token),
-            None => Err((Some(token.span()), "No self in this scope")),
+            None => Err(SemanticError::new(
+                Some(token.span()),
+                "No self in this scope",
+            )),
         }
     }
 
-    pub fn get_var(&self, name: &str) -> Result<Symbol, &'static str> {
+    pub fn get_var(&self, name: &str) -> Result<Symbol, String> {
         self.lst
             .get(name)
             .or(self
@@ -124,7 +125,7 @@ impl ParserState {
                 .get(name)
                 .filter(|s| !matches!(s, Symbol::Function { .. })))
             .cloned()
-            .ok_or("Variable was not declared")
+            .ok_or("Variable was not declared".to_owned())
     }
 
     pub fn set_class<'ip>(
@@ -132,7 +133,7 @@ impl ParserState {
         lexer: &dyn NonStreamingLexer<'ip, DefaultLexeme, u32>,
         class: Span,
         parent: Option<Span>,
-    ) -> Result<&'ip str, (Option<Span>, &'static str)> {
+    ) -> Result<&'ip str, SemanticError> {
         self.cur_class = Some(self.type_table.set_class(lexer, class, parent)?);
         Ok(lexer.span_str(class))
     }
@@ -144,7 +145,7 @@ impl ParserState {
         field_list: LinkedList<(Type, Span)>,
         method_list: LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,
         flabel: &mut LabelGenerator,
-    ) -> Result<Vec<u8>, (Option<Span>, &'static str)> {
+    ) -> Result<Vec<u8>, SemanticError> {
         self.type_table.insert_cst(
             span,
             self.cur_class.as_ref().unwrap().get_name().unwrap(),

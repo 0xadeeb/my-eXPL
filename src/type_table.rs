@@ -4,6 +4,7 @@ use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 
 use crate::{
+    error::SemanticError,
     symbol::{Symbol, SymbolTable},
     utils::label::LabelGenerator,
 };
@@ -37,10 +38,10 @@ impl UserDefType {
         }
     }
 
-    pub fn get_fns(&self) -> Result<&Vec<u8>, &'static str> {
+    pub fn get_fns(&self) -> Result<&Vec<u8>, String> {
         match self {
             Self::Class { fn_list, .. } => Ok(fn_list),
-            _ => Err("Struct has no methods"),
+            _ => Err("Struct has no methods".to_owned()),
         }
     }
 
@@ -80,13 +81,13 @@ impl UserDefType {
         }
     }
 
-    pub fn get_parent_st(&self, tt: &TypeTable) -> Result<SymbolTable, &'static str> {
+    pub fn get_parent_st(&self, tt: &TypeTable) -> Result<SymbolTable, String> {
         match self {
             Self::Class { parent, .. } => match parent {
                 Some(p) => Ok(tt.get(p).unwrap().get_st().clone()),
                 None => Ok(SymbolTable::default()),
             },
-            _ => Err("No parent for structure"),
+            _ => Err("No parent for structure".to_owned()),
         }
     }
 
@@ -112,21 +113,21 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn deref(&self) -> Result<Self, &'static str> {
+    pub fn deref(&self) -> Result<Self, String> {
         match self {
             Self::Pointer(t) => Ok(*t.clone()),
-            _ => Err("Dereferencing not defined for this variable type"),
+            _ => Err("Dereferencing not defined for this variable type".to_owned()),
         }
     }
 
-    pub fn rref(&self) -> Result<Self, &'static str> {
+    pub fn rref(&self) -> Result<Self, String> {
         Ok(Type::Pointer(Box::new(self.clone())))
     }
 
-    pub fn get_name(&self) -> Result<&str, &'static str> {
+    pub fn get_name(&self) -> Result<&str, String> {
         match self {
             Type::UserDef(name) => Ok(name),
-            _ => Err("No name for this type"),
+            _ => Err("No name for this type".to_owned()),
         }
     }
 
@@ -144,10 +145,10 @@ impl Type {
         }
     }
 
-    pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, &'static str> {
+    pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, String> {
         match self {
             Self::UserDef(name) => Ok(tt.get(name).unwrap().get_st()),
-            _ => Err("No symbol table for this type"),
+            _ => Err("No symbol table for this type".to_owned()),
         }
     }
 }
@@ -200,7 +201,7 @@ impl TypeBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Type, &'static str> {
+    pub fn build(self) -> Result<Type, String> {
         match self.dtype {
             Some(t) => {
                 let new_type = (0..self.pointer)
@@ -214,7 +215,7 @@ impl TypeBuilder {
                     None => Ok(new_type),
                 }
             }
-            None => Err("Inner type was not set!"),
+            None => Err("Inner type was not set!".to_owned()),
         }
     }
 }
@@ -254,10 +255,13 @@ impl TypeTable {
         &mut self,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
         tspan: Span,
-    ) -> Result<Type, (Option<Span>, &'static str)> {
+    ) -> Result<Type, SemanticError> {
         let tname = lexer.span_str(tspan);
         if self.table.contains_key(tname) {
-            return Err((Some(tspan), "Type declared multiple times"));
+            return Err(SemanticError::new(
+                Some(tspan),
+                "Type declared multiple times",
+            ));
         }
 
         self.table.insert(
@@ -280,7 +284,7 @@ impl TypeTable {
         span: Span,
         dtype: Type,
         field_list: LinkedList<(Type, Span)>, // list of type, name of the fields
-    ) -> Result<(), (Option<Span>, &'static str)> {
+    ) -> Result<(), SemanticError> {
         let tname = dtype.get_name().unwrap();
         let sst = self.table.get_mut(tname).unwrap().get_st_mut();
         for (i, (ftype, fname_span)) in field_list.iter().enumerate() {
@@ -294,10 +298,13 @@ impl TypeTable {
                 },
                 true,
             )
-            .map_err(|msg| (Some(*fname_span), msg))?;
+            .map_err(|msg| SemanticError::new(Some(*fname_span), &msg))?;
         }
         if sst.get_size().to_owned() > 8 {
-            return Err((Some(span), "This type takes up more than 8 words"));
+            return Err(SemanticError::new(
+                Some(span),
+                "This type takes up more than 8 words",
+            ));
         }
         Ok(())
     }
@@ -307,10 +314,13 @@ impl TypeTable {
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
         class: Span,
         pspan: Option<Span>,
-    ) -> Result<Type, (Option<Span>, &'static str)> {
+    ) -> Result<Type, SemanticError> {
         let cname = lexer.span_str(class);
         if self.table.contains_key(cname) {
-            return Err((Some(class), "Type with same name previously defined"));
+            return Err(SemanticError::new(
+                Some(class),
+                "Type with same name previously defined",
+            ));
         }
 
         let parent = match pspan {
@@ -318,7 +328,7 @@ impl TypeTable {
                 .table
                 .get(lexer.span_str(p))
                 .filter(|t| matches!(t, UserDefType::Class { .. }))
-                .ok_or((Some(p), "Parent class not defined"))?
+                .ok_or(SemanticError::new(Some(p), "Parent class not defined"))?
                 .into(),
             None => None,
         };
@@ -347,7 +357,7 @@ impl TypeTable {
         field_list: LinkedList<(Type, Span)>,
         method_list: LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,
         flabel: &mut LabelGenerator,
-    ) -> Result<Vec<u8>, (Option<Span>, &'static str)> {
+    ) -> Result<Vec<u8>, SemanticError> {
         let entry = self.table.get(cname).unwrap();
         let mut cst = entry.get_st().clone();
         let mut fn_list = entry.get_fns().unwrap().clone();
@@ -363,7 +373,7 @@ impl TypeTable {
                 },
                 true,
             )
-            .map_err(|msg| (Some(*fname_span), msg))?;
+            .map_err(|msg| SemanticError::new(Some(*fname_span), &msg))?;
         }
 
         let parent_st = entry.get_parent_st(&self).unwrap();
@@ -372,7 +382,7 @@ impl TypeTable {
         for (rtype, name_span, param_list) in method_list.iter() {
             let name = lexer.span_str(*name_span);
             if method_set.contains(name) {
-                return Err((
+                return Err(SemanticError::new(
                     Some(*name_span),
                     "This method is defined multiple times in this class",
                 ));
@@ -400,17 +410,23 @@ impl TypeTable {
                         },
                         false,
                     )
-                    .map_err(|msg| (Some(*name_span), msg))?;
+                    .map_err(|msg| SemanticError::new(Some(*name_span), &msg))?;
                 }
             }
             method_set.insert(name.to_owned());
         }
 
         if cst.get_size().to_owned() > 8 {
-            return Err((Some(span), "This type takes up more than 8 words"));
+            return Err(SemanticError::new(
+                Some(span),
+                "This type takes up more than 8 words",
+            ));
         }
         if fn_list.len() > 8 {
-            return Err((Some(span), "This type has more than 8 methods"));
+            return Err(SemanticError::new(
+                Some(span),
+                "This type has more than 8 methods",
+            ));
         }
         self.table.insert(
             cname.to_owned(),

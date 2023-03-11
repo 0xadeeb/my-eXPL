@@ -33,10 +33,10 @@ impl SymbolTable {
         base: i16,
         tt: &TypeTable,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), String> {
         let name = lexer.span_str(s.get_name());
         if self.table.contains_key(name) {
-            return Err("Variable declared multiple times");
+            return Err(format!("Variable declared multiple times"));
         }
         if !s.is_func() {
             s.binding(base + self.size as i16);
@@ -46,9 +46,9 @@ impl SymbolTable {
         Ok(())
     }
 
-    pub fn insert_symbol(&mut self, s: Symbol, check: bool) -> Result<(), &'static str> {
+    pub fn insert_symbol(&mut self, s: Symbol, check: bool) -> Result<(), String> {
         if check && self.table.contains_key(s.get_name()) {
-            return Err("Multiple variables with same name defined");
+            return Err(format!("Multiple variables with same name defined"));
         }
         self.table.insert(s.get_name().to_string(), s);
         // FIXME: Gotta add size
@@ -90,38 +90,38 @@ impl Symbol {
         }
     }
 
-    pub fn get_dim(&self) -> Result<u8, &'static str> {
+    pub fn get_dim(&self) -> Result<u8, String> {
         match self {
             Self::Variable { dtype, .. } => Ok(dtype.get_dim()),
-            _ => Err("No dimention for functions"),
+            _ => Err(format!("No dimention for functions")),
         }
     }
 
-    pub fn get_binding(&self) -> Result<&i16, &'static str> {
+    pub fn get_binding(&self) -> Result<&i16, String> {
         match self {
             Self::Variable { binding, .. } => Ok(binding),
-            _ => Err("This symbol is bound to an address"),
+            _ => Err(format!("This symbol is bound to an address")),
         }
     }
 
-    pub fn get_label(&self) -> Result<&u8, &'static str> {
+    pub fn get_label(&self) -> Result<&u8, String> {
         match self {
             Self::Function { label, .. } => Ok(label),
-            Self::Variable { .. } => Err("This symbol is has no label"),
+            Self::Variable { .. } => Err(format!("This symbol is has no label")),
         }
     }
 
-    pub fn get_idx(&self) -> Result<u8, &'static str> {
+    pub fn get_idx(&self) -> Result<u8, String> {
         match self {
-            Self::Function { idx, .. } => idx.ok_or("This function has no index"),
+            Self::Function { idx, .. } => idx.ok_or("This function has no index".to_owned()),
             Self::Variable { binding, .. } => Ok(*binding as u8),
         }
     }
 
-    pub fn get_params(&self) -> Result<&LinkedList<(Type, String)>, &'static str> {
+    pub fn get_params(&self) -> Result<&LinkedList<(Type, String)>, String> {
         match self {
             Self::Function { params, .. } => Ok(params),
-            _ => Err("The symbol was not of a function"),
+            _ => Err(format!("The symbol was not of a function")),
         }
     }
 
@@ -213,7 +213,7 @@ impl SymbolBuilder {
     pub fn build(
         self,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
-    ) -> Result<Symbol, &'static str> {
+    ) -> Result<Symbol, String> {
         if let Some(binding) = self.binding {
             Ok(Symbol::Variable {
                 name: lexer.span_str(self.name).to_string(),
@@ -230,7 +230,7 @@ impl SymbolBuilder {
                 params,
             })
         } else {
-            Err("Couldn't create symbol from builder")
+            Err(format!("Couldn't create symbol from builder"))
         }
     }
 }

@@ -49,109 +49,103 @@
 
 %%
 // START
-Program -> Result<LinkedList<Vec<u8>>, (Option<Span>, &'static str)>:
+Program -> Result<LinkedList<Vec<u8>>, SemanticError>:
       TypeDefBlock ClassDefBlock GDeclaration Functions    { $1?; $3?; $4?; Ok($2?) }
     ;
 
 // TYPE DECLARATION GRAMMAR
-TypeDefBlock -> Result<(), (Option<Span>, &'static str)>:
+TypeDefBlock -> Result<(), SemanticError>:
       "TYPE" TypeDefList "ENDTYPE"    { $2 }
     | "TYPE" "ENDTYPE"                { Ok(()) }
     | /* Empty */                     { Ok(()) }
     ;
 
-TypeDefList -> Result<(), (Option<Span>, &'static str)>:
+TypeDefList -> Result<(), SemanticError>:
       TypeDefList TypeDef   { $1?; $2 }
     | TypeDef               { $1 }
     ;
 
-TypeDef -> Result<(), (Option<Span>, &'static str)>:
+TypeDef -> Result<(), SemanticError>:
       Tname "{" FieldDeclList "}"      { p.borrow_mut().tt_mut().insert_struct($lexer, $span, $1?, $3?) }
     ;
 
-Tname -> Result<Type, (Option<Span>, &'static str)>:
+Tname -> Result<Type, SemanticError>:
        Id                  { p.borrow_mut().tt_mut().new_struct($lexer, $1?.span()) }
     ;
 
 // CLASS DECLARATION GRAMMAR
-ClassDefBlock -> Result<LinkedList<Vec<u8>>,  (Option<Span>, &'static str)>:
+ClassDefBlock -> Result<LinkedList<Vec<u8>>,  SemanticError>:
        "CLASS" ClassDefList "ENDCLASS"   { $2 }
      | "CLASS" "ENDCLASS"                { Ok(LinkedList::new()) }
      | /* Empty */                       { Ok(LinkedList::new()) }
      ;
 
-ClassDefList -> Result<LinkedList<Vec<u8>>,  (Option<Span>, &'static str)>:
+ClassDefList -> Result<LinkedList<Vec<u8>>,  SemanticError>:
        ClassDefList ClassDef       { Ok(class_list_join($2?, p.borrow_mut().tt_mut(), $1?)) }
      | ClassDef                    { Ok(class_list_join($1?, p.borrow_mut().tt_mut(), LinkedList::new())) }
      ;
 
-ClassDef -> Result<(&'input str, Vec<u8>), (Option<Span>, &'static str)>:
+ClassDef -> Result<(&'input str, Vec<u8>), SemanticError>:
        Cname "{" CDecl MethodDefns "}"     { $4?; p.borrow_mut().end_class(); Ok(($1?, $3?)) }
      ;
 
-Cname -> Result<&'input str, (Option<Span>, &'static str)>:
+Cname -> Result<&'input str, SemanticError>:
        Id                  { p.borrow_mut().set_class($lexer, $1?.span(), None) }
      | Id "EXTENDS" Id     { p.borrow_mut().set_class($lexer, $1?.span(), Some($3?.span())) }
      ;
 
 // FIXME: Label generator
-CDecl -> Result<Vec<u8>, (Option<Span>, &'static str)>:
+CDecl -> Result<Vec<u8>, SemanticError>:
       "DECL" MethodDeclList "ENDDECL"                   { p.borrow_mut().insert_cst($span, $lexer, LinkedList::new(), $2?, &mut LabelGenerator::default()) }
     | "DECL" FieldDeclList MethodDeclList "ENDDECL"     { p.borrow_mut().insert_cst($span, $lexer, $2?, $3?, &mut LabelGenerator::default()) }
     ;
 
-FieldDeclList -> Result<LinkedList<(Type, Span)>, (Option<Span>, &'static str)>:
+FieldDeclList -> Result<LinkedList<(Type, Span)>, SemanticError>:
       FieldDeclList FieldDecl       { insert_back($1, $2) }
     | FieldDecl                     { Ok(LinkedList::from([$1?])) }
     ;
 
-FieldDecl -> Result<(Type, Span), (Option<Span>, &'static str)>:
+FieldDecl -> Result<(Type, Span), SemanticError>:
       Type Id ";"            { Ok(($1?, $2?.span())) }
     ;
 
-MethodDeclList -> Result<LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,  (Option<Span>, &'static str)>:
+MethodDeclList -> Result<LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,  SemanticError>:
       MethodDeclList MethodDecl    { insert_back($1, $2) }
     | MethodDecl                   { Ok(LinkedList::from([$1?])) }
     ;
 
-MethodDecl -> Result<(Type, Span, LinkedList<(Type, Span)>),  (Option<Span>, &'static str)>:
+MethodDecl -> Result<(Type, Span, LinkedList<(Type, Span)>),  SemanticError>:
       Type Id "(" ParamList ")" ";"  { Ok(($1?, $2?.span(), $4?)) }
     ;
 
-/* TypeDefName -> Result<Span,  (Option<Span>, &'static str)>: */
-/*       "INT_T"               { Ok($1.as_ref().unwrap().span()) } */
-/*     | "STRING_T"            { Ok($1.as_ref().unwrap().span()) } */
-/*     | Id                    { Ok($1?.span()) } */
-/*     ; */
-
 // TODO: Write helper functions
-MethodDefns -> Result<(),  (Option<Span>, &'static str)>:
+MethodDefns -> Result<(),  SemanticError>:
       MethodDefns FDef   { p.borrow_mut().fn_list().push_back($2?); Ok(()) }
     | FDef               { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
-GDeclaration -> Result<u16, (Option<Span>, &'static str)>:
+GDeclaration -> Result<u16, SemanticError>:
       "DECL" GDeclList "ENDDECL"  { $2?; Ok(*p.borrow().gst().get_size()) }
     | "DECL" "ENDDECL"            { Ok(0) }
     | /* Empty */                 { Ok(0) }
     ;
 
-GDeclList -> Result<(), (Option<Span>, &'static str)>:
+GDeclList -> Result<(), SemanticError>:
       GDeclList GDecl   { $1?; $2 }
     | GDecl             { $1 }
     ;
 
-GDecl -> Result<(), (Option<Span>, &'static str)>:
+GDecl -> Result<(), SemanticError>:
       Type GSymbolList ";"    { insert($2?, $1?, p.borrow_mut().gst_mut(), 4099, p.borrow().tt(), $lexer) }
     ;
 
-GSymbolList -> Result<LinkedList<SymbolBuilder>, (Option<Span>, &'static str)>:
+GSymbolList -> Result<LinkedList<SymbolBuilder>, SemanticError>:
       GSymbolDef "," GSymbolList   { insert_front($3, $1) }
     | GSymbolDef                   { Ok(LinkedList::from([$1?])) }
     ;
 
-GSymbolDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
+GSymbolDef -> Result<SymbolBuilder, SemanticError>:
       Id                               { let s = SymbolBuilder::new($1?.span(), true); Ok(s) }
     | Id SizeDef                       { let mut s = SymbolBuilder::new($1?.span(), true); s.dim($2?); Ok(s) }
     | "*" Id                           { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr(); Ok(s) }
@@ -159,12 +153,12 @@ GSymbolDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
     | "*" Id  "(" ParamList ")"        { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr().params($4?, &mut LabelGenerator::default(), $lexer); Ok(s) }
     ;
 
-SizeDef -> Result<Vec<u8>, (Option<Span>, &'static str)>:
+SizeDef -> Result<Vec<u8>, SemanticError>:
       SizeDef "[" Num "]"     { let mut $1 = $1?; $1.push(parse_int($lexer, &$3?)? as u8); Ok($1) }
     | "[" Num "]"             { Ok(Vec::from([parse_int($lexer, &$2?)? as u8])) }
     ;
 
-Type -> Result<Type, (Option<Span>, &'static str)>:
+Type -> Result<Type, SemanticError>:
       "INT_T"         { Ok(Type::Int) }
     | "STRING_T"      { Ok(Type::Str) }
     | Id              {
@@ -173,24 +167,24 @@ Type -> Result<Type, (Option<Span>, &'static str)>:
         p.borrow()
          .tt()
          .get($lexer.span_str(span))
-         .ok_or((Some(span), "Type not defined"))?
+         .ok_or(SemanticError::new(Some(span), "Type not defined"))?
          .to_type()
       )
     }
     ;
 
 // FUNCTION DEFINITION GRAMMAR
-Functions ->  Result<(), (Option<Span>, &'static str)>:
+Functions ->  Result<(), SemanticError>:
       FDefBlock MainFn    { p.borrow_mut().fn_list().push_back($2?); Ok(()) }
     | MainFn              { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
     ;
 
-FDefBlock -> Result<(), (Option<Span>, &'static str)>:
+FDefBlock -> Result<(), SemanticError>:
       FDefBlock FDef        { Ok(()) }
     | FDef                  { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
     ;
 
-FDef -> Result<FnAst, (Option<Span>, &'static str)>:
+FDef -> Result<FnAst, SemanticError>:
       FType FName "(" Params ")" "{" LDeclaration Body ReturnStmt "}"    {
         $2?; $4?; $7?;
         create_fn(
@@ -201,65 +195,66 @@ FDef -> Result<FnAst, (Option<Span>, &'static str)>:
       }
     ;
 
-FType -> Result<Type, (Option<Span>, &'static str)>:
+FType -> Result<Type, SemanticError>:
       Type         { $1 }
     | "*" Type     { Ok($2?.rref().unwrap()) }
     ;
 
-FName -> Result<&'input str, (Option<Span>, &'static str)>:
+FName -> Result<&'input str, SemanticError>:
       Id           {
+        let $1 = $1?;
         Ok(
           p.borrow_mut()
             .update_state(
-              $lexer.span_str($1?.span())
+              $lexer.span_str($1.span())
             )
             .map_err(
-              |msg| (Some($1.unwrap().span()), msg)
+              |msg| SemanticError::new(Some($1.span()), &msg)
             )?
         )
       }
     ;
 
-LDeclaration -> Result<(), (Option<Span>, &'static str)>:
+LDeclaration -> Result<(), SemanticError>:
       "DECL" LDeclList "ENDDECL"  { $2 }
     | "DECL" "ENDDECL"            { Ok(()) }
     | /* Empty */                { Ok(()) }
     ;
 
-LDeclList -> Result<(), (Option<Span>, &'static str)>:
+LDeclList -> Result<(), SemanticError>:
       LDeclList LDecl   { $1?; $2 }
     | LDecl             { $1 }
     ;
 
-LDecl -> Result<(), (Option<Span>, &'static str)>:
+LDecl -> Result<(), SemanticError>:
       Type LSymbolList ";"    { insert($2?, $1?, p.borrow_mut().lst_mut(), 1, p.borrow().tt(), $lexer) }
     ;
 
-LSymbolList -> Result<LinkedList<SymbolBuilder>, (Option<Span>, &'static str)>:
+LSymbolList -> Result<LinkedList<SymbolBuilder>, SemanticError>:
       LSymbolDef "," LSymbolList   { insert_front($3, $1) }
     | LSymbolDef                   { Ok(LinkedList::from([$1?])) }
     ;
 
-LSymbolDef -> Result<SymbolBuilder, (Option<Span>, &'static str)>:
+LSymbolDef -> Result<SymbolBuilder, SemanticError>:
       Id              { let s = SymbolBuilder::new($1?.span(), false); Ok(s) }
     | "*" Id          { let mut s = SymbolBuilder::new($2?.span(), false); s.ptr(); Ok(s) }
     ;
 
-Params -> Result<(), (Option<Span>, &'static str)>:
+Params -> Result<(), SemanticError>:
       ParamList       { insert_args($lexer, $1?, $span, &mut *p.borrow_mut()) }
     ;
 
-ParamList -> Result<LinkedList<(Type, Span)>, (Option<Span>, &'static str)>:
+ParamList -> Result<LinkedList<(Type, Span)>, SemanticError>:
       Param "," ParamList      { insert_front($3, $1) }
     | Param                    { Ok(LinkedList::from([$1?])) }
     ;
 
-Param -> Result<(Type, Span), (Option<Span>, &'static str)>:
+Param -> Result<(Type, Span), SemanticError>:
       Type Id        { Ok(($1?, $2?.span())) }
     | Type "*" Id    { Ok(($1?.rref().unwrap(), $3?.span())) }
     ;
 
-MainFn -> Result<FnAst, (Option<Span>, &'static str)>:
+MainFn -> Result<FnAst, SemanticError>:
       FType Main "(" ")" "{" LDeclaration Body ReturnStmt "}"   {
         $2?; $6?;
         create_main_block(
@@ -270,18 +265,19 @@ MainFn -> Result<FnAst, (Option<Span>, &'static str)>:
       }
     ;
 
-Body -> Result<Tnode, (Option<Span>, &'static str)>:
+Body -> Result<Tnode, SemanticError>:
       "BEGIN" Slist "END" { $2 }
     | "BEGIN" "END"       { Ok(Tnode::Empty) }
     ;
 
-Slist -> Result<Tnode, (Option<Span>, &'static str)>:
+Slist -> Result<Tnode, SemanticError>:
       Slist Stmt  { Ok(Tnode::Connector{left: Box::new($1?), right: Box::new($2?),}) }
     | Stmt        { $1 }
     ;
 
 // STATEMENTS GRAMMAR
-Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
+// TODO: complete
+Stmt -> Result<Tnode, SemanticError>:
       "IF" "(" E ")" "THEN" Slist "ENDIF" ";"                 { create_if($span, $3?, $6?, None) }
     | "IF" "(" E ")" "THEN" Slist "ELSE" Slist "ENDIF" ";"    { create_if($span, $3?, $6?, Some($8?)) }
     | "WHILE" "(" E ")" "DO" Slist "ENDWHILE" ";"             { create_while($span, $3?, $6?) }
@@ -294,16 +290,16 @@ Stmt -> Result<Tnode, (Option<Span>, &'static str)>:
     | "INIT" "(" ")" ";"                                      { Ok(Tnode::Initialize) }
     | Var "=" "ALLOC" "(" ")" ";"                             { create_alloc($span, $1?) }
     | "FREE" "(" Var ")" ";"                                  { create_free($span, $3?) }
-    | Var "=" "NEW" "(" Id ")" ";"                            { Err((None, "nothing")) }
-    | "DELETE" "(" Var ")" ";"                                { Err((None, "nothing")) }
+    | Var "=" "NEW" "(" Id ")" ";"                            { Err(SemanticError::new(None, "nothing")) }
+    | "DELETE" "(" Var ")" ";"                                { Err(SemanticError::new(None, "nothing")) }
     ;
 
-ReturnStmt -> Result<Tnode, (Option<Span>, &'static str)>:
+ReturnStmt -> Result<Tnode, SemanticError>:
       "RETURN" E ";"    { create_return($span, $2?, &*p.borrow()) }
     ;
 
 // EXPRESSION GRAMMAR
-E -> Result<Tnode, (Option<Span>, &'static str)>:
+E -> Result<Tnode, SemanticError>:
       E "+" E                 { create_int(BinaryOpType::Add, $span, $1?, $3?) }
     | E "-" E                 { create_int(BinaryOpType::Sub, $span, $1?, $3?) }
     | E "*" E                 { create_int(BinaryOpType::Mul, $span, $1?, $3?) }
@@ -326,63 +322,63 @@ E -> Result<Tnode, (Option<Span>, &'static str)>:
     | "NULL"                  { Ok(Tnode::Null) }
     ;
 
-ArgList -> Result<LinkedList<Tnode>, (Option<Span>, &'static str)>:
+ArgList -> Result<LinkedList<Tnode>, SemanticError>:
       ArgList "," E       { insert_back($1, $3) }
     | E                   { Ok(LinkedList::from([$1?])) }
     | /* Empty */         { Ok(LinkedList::new()) }
     ;
 
-Var -> Result<Tnode, (Option<Span>, &'static str)>:
+Var -> Result<Tnode, SemanticError>:
       VarAccess       { $1 }
     | "*" VarAccess   { create_deref($span, $2?) }
     ;
 
-VarAccess ->  Result<Tnode, (Option<Span>, &'static str)>:
+VarAccess ->  Result<Tnode, SemanticError>:
       Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS, &*p.borrow()) }
     | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS, &*p.borrow()) }
     | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS, &*p.borrow()) }
     | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS, &*p.borrow()) }
     ;
 
-FnCall -> Result<Tnode, (Option<Span>, &'static str)>:
+FnCall -> Result<Tnode, SemanticError>:
       Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span, p.borrow().gst()) }
-    | Id ArrayAccess "." DotField "(" ArgList ")"     { Err((None, "nothing")) }
-    | Inst "." DotField "(" ArgList ")"               { Err((None, "nothing")) }
+    | Id ArrayAccess "." DotField "(" ArgList ")"     { Err(SemanticError::new(None, "nothing")) }
+    | Inst "." DotField "(" ArgList ")"               { Err(SemanticError::new(None, "nothing")) }
     ;
 
-Inst -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
+Inst -> Result<DefaultLexeme<u32>, SemanticError>:
       Id       { $1 }
     | "SELF"   { p.borrow().check_self($1.unwrap()) }
     ;
 
-DotField ->  Result<LinkedList<Span>, (Option<Span>, &'static str)>:
+DotField ->  Result<LinkedList<Span>, SemanticError>:
       Id "." DotField         { let mut $3 = $3?; $3.push_front($1?.span()); Ok($3) }
     | Id                      { Ok(LinkedList::from([$1?.span()])) }
     ;
 
-ArrayAccess -> Result<Vec<Box<Tnode>>, (Option<Span>, &'static str)>:
+ArrayAccess -> Result<Vec<Box<Tnode>>, SemanticError>:
       ArrayAccess "[" E "]"     { let mut $1 = $1?; $1.push(Box::new($3?)); Ok($1) }
     | "[" E "]"                 { Ok(vec![Box::new($2?)]) }
     ;
 
-Main -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
+Main -> Result<DefaultLexeme<u32>, SemanticError>:
     "MAIN"     {
       p.borrow_mut().update_state("").unwrap();
-      $1.map_err(|e| (Some(e.span()), "Faulty lexeme"))
+      $1.map_err(|e| SemanticError::new(Some(e.span()), "Faulty lexeme"))
     }
     ;
 
 // LEXEME RESOLVE
-Id -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
-    "VAR"          { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+Id -> Result<DefaultLexeme<u32>, SemanticError>:
+    "VAR"          { $1.map_err(|e| SemanticError::new(Some(e.span()), "Faulty lexeme")) }
     ;
 
-Num -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
-    "NUM"          { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+Num -> Result<DefaultLexeme<u32>, SemanticError>:
+    "NUM"          { $1.map_err(|e| SemanticError::new(Some(e.span()), "Faulty lexeme")) }
     ;
 
-String -> Result<DefaultLexeme<u32>, (Option<Span>, &'static str)>:
-    "STRING_C"     { $1.map_err(|e| (Some(e.span()), "Faulty lexeme")) }
+String -> Result<DefaultLexeme<u32>, SemanticError>:
+    "STRING_C"     { $1.map_err(|e| SemanticError::new(Some(e.span()), "Faulty lexeme")) }
     ;
 
 Unmatched -> ():
@@ -397,20 +393,21 @@ use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 use myexpl::{
     ast::*,
+    error::SemanticError,
     frontend::{parser_state::*, semantics::*},
     symbol::*,
     type_table::*,
+    utils::label::LabelGenerator,
 };
 use std::{cell::RefCell, collections::LinkedList};
-use myexpl::utils::label::LabelGenerator;
 
 fn parse_int(
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     token: &DefaultLexeme,
-) -> Result<u32, (Option<Span>, &'static str)> {
+) -> Result<u32, SemanticError> {
     match lexer.span_str(token.span()).parse::<u32>() {
         Ok(val) => Ok(val),
-        Err(_) => Err((Some(token.span()), "Can't parse to u32")),
+        Err(_) => Err(SemanticError::new(Some(token.span()), "Can't parse to u32")),
     }
 }
 
@@ -425,18 +422,18 @@ fn class_list_join(
 }
 
 fn insert_front<T>(
-    rhs: Result<LinkedList<T>, (Option<Span>, &'static str)>,
-    lhs: Result<T, (Option<Span>, &'static str)>,
-) -> Result<LinkedList<T>, (Option<Span>, &'static str)> {
+    rhs: Result<LinkedList<T>, SemanticError>,
+    lhs: Result<T, SemanticError>,
+) -> Result<LinkedList<T>, SemanticError> {
     let mut flt = rhs?;
     flt.push_front(lhs?);
     Ok(flt)
 }
 
 fn insert_back<T>(
-    lhs: Result<LinkedList<T>, (Option<Span>, &'static str)>,
-    rhs: Result<T, (Option<Span>, &'static str)>,
-) -> Result<LinkedList<T>, (Option<Span>, &'static str)> {
+    lhs: Result<LinkedList<T>, SemanticError>,
+    rhs: Result<T, SemanticError>,
+) -> Result<LinkedList<T>, SemanticError> {
     let mut flt = lhs?;
     flt.push_back(rhs?);
     Ok(flt)
