@@ -15,12 +15,13 @@ use crate::utils::label::LabelGenerator;
 // of global symbol table, type table, label generator etc when a function needs to use it
 // Ideally only some fields like local symbol table and current fn/class is required in this DS
 pub struct ParserState {
-    gst: SymbolTable,
-    lst: SymbolTable,
-    type_table: TypeTable,
-    fn_list: LinkedList<FnAst>,
-    current_fn: Option<Symbol>, // Current function that is being parser
-    cur_class: Option<Type>,    // Current class that is being parser
+    pub gst: SymbolTable,
+    pub lst: SymbolTable,
+    pub type_table: TypeTable,
+    pub fn_list: LinkedList<FnAst>,
+    pub current_fn: Option<Symbol>, // Current function that is being parser
+    pub cur_class: Option<Type>,    // Current class that is being parser
+    pub flabel: LabelGenerator,     // Function label generator
 }
 
 impl Default for ParserState {
@@ -32,39 +33,12 @@ impl Default for ParserState {
             fn_list: LinkedList::new(),
             current_fn: None,
             cur_class: None,
+            flabel: LabelGenerator::default(),
         }
     }
 }
 
 impl ParserState {
-    pub fn gst(&self) -> &SymbolTable {
-        &self.gst
-    }
-
-    pub fn gst_mut(&mut self) -> &mut SymbolTable {
-        &mut self.gst
-    }
-
-    pub fn lst(&self) -> &SymbolTable {
-        &self.lst
-    }
-
-    pub fn lst_mut(&mut self) -> &mut SymbolTable {
-        &mut self.lst
-    }
-
-    pub fn tt(&self) -> &TypeTable {
-        &self.type_table
-    }
-
-    pub fn tt_mut(&mut self) -> &mut TypeTable {
-        &mut self.type_table
-    }
-
-    pub fn fn_list(&mut self) -> &mut LinkedList<FnAst> {
-        &mut self.fn_list
-    }
-
     // Returns the defined return type of the current function bieng parser
     pub fn cfn_rtype(&self) -> &Type {
         match self.current_fn {
@@ -144,7 +118,6 @@ impl ParserState {
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
         field_list: LinkedList<(Type, Span)>,
         method_list: LinkedList<(Type, Span, LinkedList<(Type, Span)>)>,
-        flabel: &mut LabelGenerator,
     ) -> Result<Vec<u8>, SemanticError> {
         self.type_table.insert_cst(
             span,
@@ -152,7 +125,7 @@ impl ParserState {
             lexer,
             field_list,
             method_list,
-            flabel,
+            &mut self.flabel,
         )
     }
 }

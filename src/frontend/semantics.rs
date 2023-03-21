@@ -12,7 +12,6 @@ pub fn insert(
     inner_type: Type,
     s_table: &mut SymbolTable,
     base: i16,
-    tt: &TypeTable,
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
 ) -> Result<(), SemanticError> {
     while let Some(mut var) = var_list.pop_front() {
@@ -20,7 +19,7 @@ pub fn insert(
         let span = var.get_name();
 
         s_table
-            .insert_builder(var, base, tt, lexer)
+            .insert_builder(var, base, lexer)
             .map_err(|msg| SemanticError::new(Some(span), &msg))?;
     }
     Ok(())
@@ -29,13 +28,13 @@ pub fn insert(
 pub fn get_variable(
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     token: &DefaultLexeme,
-    array_access: Vec<Box<Tnode>>,
+    array_access: Vec<Tnode>,
     fields: LinkedList<Span>,
     ref_type: RefType,
     parser: &ParserState,
 ) -> Result<Tnode, SemanticError> {
     let name = lexer.span_str(token.span());
-    let tt = parser.tt();
+    let tt = &parser.type_table;
     let entry = parser
         .get_var(name)
         .map_err(|msg| SemanticError::new(Some(token.span()), &msg))?;
@@ -47,39 +46,35 @@ pub fn get_variable(
         ));
     }
 
-    let mut tinstance = entry.get_type().clone();
+    let mut tinstance = entry.get_type();
     let mut field_access = vec![];
     for fspan in fields.iter() {
         let fname = lexer.span_str(*fspan);
         let symbol = tinstance
             .symbol_list(tt)
-            .map_err(|msg| SemanticError::new(Some(token.span()), &msg))?
+            .map_err(|msg| {
+                SemanticError::new(Some(Span::new(token.span().start(), fspan.start())), &msg)
+            })?
             .get(fname)
             .ok_or(SemanticError::new(
                 Some(*fspan),
-                "This field is not present in the type",
+                &format!("This field is not present in the type {:?}", tinstance),
             ))?;
         field_access.push(symbol.get_idx().unwrap());
-        tinstance = tt
-            .get(symbol.get_name())
-            .ok_or(SemanticError::new(
-                Some(*fspan),
-                "This field is not present in the type",
-            ))?
-            .to_type();
+        tinstance = symbol.get_type();
     }
 
     Ok(Tnode::Var {
         span: token.span(),
-        symbol: entry,
+        symbol: entry.clone(),
         array_access,
         field_access,
         ref_type,
-        dtype: tinstance,
+        dtype: tinstance.clone(),
     })
 }
 
-pub fn check_access_vec(exp: Vec<Box<Tnode>>) -> Result<Vec<Box<Tnode>>, SemanticError> {
+pub fn check_access_vec(exp: Vec<Tnode>) -> Result<Vec<Tnode>, SemanticError> {
     for e in &exp {
         match e.get_type() {
             Type::Int => {}
@@ -108,7 +103,7 @@ pub fn insert_args(
         match (&i.next(), j.next()) {
             (Some((t1, n1)), Some((t2, n2))) if t1 == t2 && n1 == lexer.span_str(*n2) => {
                 parser
-                    .lst_mut()
+                    .lst
                     .insert_symbol(
                         Symbol::Variable {
                             name: n1.to_string(),
@@ -459,27 +454,25 @@ pub fn create_fncall(
         match (i.next(), j.next()) {
             (Some((t, _)), Some(e)) if t == e.get_type() => {}
             (None, None) => break,
-            t @ _ => return Err(SemanticError::new(
-                Some(span),
-                &format!(
+            t @ _ => {
+                return Err(SemanticError::new(
+                    Some(span),
+                    &format!(
                     "Arguments of function don't match with definition, expected {:?} found {:?}",
                     t.0, t.1
                 ),
-            )),
+                ))
+            }
         }
     }
 
-    Ok(Tnode::FnCall {
-        span,
-        symbol,
-        args: LinkedList::from_iter(args.iter().map(|node| Box::new(node.clone()))),
-    })
+    Ok(Tnode::FnCall { span, symbol, args })
 }
 
 pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> {
     match var {
         Tnode::Var { ref dtype, .. } => match dtype {
-            Type::UserDef(..) => {}
+            Type::UserDef { .. } => {}
             _ => {
                 return Err(SemanticError::new(
                     Some(span),
@@ -504,7 +497,7 @@ pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> 
 pub fn create_free(span: Span, var: Tnode) -> Result<Tnode, SemanticError> {
     match &var {
         Tnode::Var { dtype, .. } => match dtype {
-            Type::UserDef(..) => {}
+            Type::UserDef { .. } => {}
             _ => {
                 return Err(SemanticError::new(
                     Some(span),

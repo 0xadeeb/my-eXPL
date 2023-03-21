@@ -24,14 +24,15 @@ impl SymbolTable {
     pub fn get_size(&self) -> &u16 {
         &self.size
     }
+
     pub fn get(&self, name: &str) -> Option<&Symbol> {
         self.table.get(name)
     }
+
     pub fn insert_builder(
         &mut self,
         mut s: SymbolBuilder,
         base: i16,
-        tt: &TypeTable,
         lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
     ) -> Result<(), String> {
         let name = lexer.span_str(s.get_name());
@@ -40,7 +41,7 @@ impl SymbolTable {
         }
         if !s.is_func() {
             s.binding(base + self.size as i16);
-            self.size += s.get_size(tt);
+            self.size += s.get_size();
         }
         self.table.insert(name.to_string(), s.build(lexer).unwrap());
         Ok(())
@@ -50,8 +51,8 @@ impl SymbolTable {
         if check && self.table.contains_key(s.get_name()) {
             return Err(format!("Multiple variables with same name defined"));
         }
+        self.size += s.get_size();
         self.table.insert(s.get_name().to_string(), s);
-        // FIXME: Gotta add size
         Ok(())
     }
 }
@@ -87,6 +88,13 @@ impl Symbol {
             | Self::Function {
                 ret_type: dtype, ..  // Ideally should have another method, but does it really matter?
             } => dtype,
+        }
+    }
+
+    pub fn get_size(&self) -> u16 {
+        match self {
+            Self::Variable { dtype, .. } => dtype.get_size(),
+            Self::Function { .. } => 0,
         }
     }
 
@@ -166,8 +174,8 @@ impl SymbolBuilder {
         self.name
     }
 
-    pub fn get_size(&self, tt: &TypeTable) -> u16 {
-        self.dtype.get_size(tt)
+    pub fn get_size(&self) -> u16 {
+        self.dtype.get_size()
     }
 
     pub fn is_func(&self) -> bool {

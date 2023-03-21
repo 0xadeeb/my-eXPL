@@ -46,17 +46,15 @@ impl UserDefType {
     }
 
     pub fn to_type(&self) -> Type {
-        match self.get_name() {
-            "int" => Type::Int,
-            "str" => Type::Str,
-            name @ _ => Type::UserDef(name.to_owned()),
-        }
-    }
-
-    pub fn get_size(&self) -> &u16 {
         match self {
-            Self::Struct { .. } => &1,
-            Self::Class { .. } => &2,
+            Self::Struct { name, .. } => Type::UserDef {
+                name: name.to_owned(),
+                size: 1,
+            },
+            Self::Class { name, .. } => Type::UserDef {
+                name: name.to_owned(),
+                size: 2,
+            },
         }
     }
 
@@ -107,7 +105,7 @@ pub enum Type {
     Bool,
     Str,
     Null,
-    UserDef(String),
+    UserDef { name: String, size: u16 },
     Pointer(Box<Type>),
     Array { dtype: Box<Type>, dim: Vec<u8> },
 }
@@ -116,7 +114,10 @@ impl Type {
     pub fn deref(&self) -> Result<Self, String> {
         match self {
             Self::Pointer(t) => Ok(*t.clone()),
-            _ => Err("Dereferencing not defined for this variable type".to_owned()),
+            _ => Err(format!(
+                "Dereferencing not defined for this variable type \"{:?}\"",
+                self
+            )),
         }
     }
 
@@ -126,15 +127,19 @@ impl Type {
 
     pub fn get_name(&self) -> Result<&str, String> {
         match self {
-            Type::UserDef(name) => Ok(name),
-            _ => Err("No name for this type".to_owned()),
+            Type::UserDef { name, .. } => Ok(name),
+            _ => Err(format!("No name for symbol of type \"{:?}\"", self)),
         }
     }
 
-    pub fn get_size<'t>(&self, tt: &'t TypeTable) -> &'t u16 {
+    pub fn get_size(&self) -> u16 {
         match self {
-            Self::UserDef(name) => tt.get(name).unwrap().get_size(),
-            _ => &1,
+            Self::UserDef { size, .. } => *size,
+            Self::Array { dtype, dim } => {
+                let acc = dtype.get_size();
+                dim.clone().into_iter().fold(acc, |acc, d| acc * (d as u16))
+            }
+            _ => 1,
         }
     }
 
@@ -147,8 +152,8 @@ impl Type {
 
     pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, String> {
         match self {
-            Self::UserDef(name) => Ok(tt.get(name).unwrap().get_st()),
-            _ => Err("No symbol table for this type".to_owned()),
+            Self::UserDef { name, .. } => Ok(tt.get(name).unwrap().get_st()),
+            _ => Err(format!("No symbol table for symbol of type \"{:?}\"", self)),
         }
     }
 }
@@ -171,19 +176,8 @@ impl TypeBuilder {
         }
     }
 
-    pub fn get_size(&self, tt: &TypeTable) -> u16 {
-        let acc = match self.dtype.as_ref().unwrap() {
-            Type::UserDef(tname) => match tt.get(&tname).unwrap() {
-                UserDefType::Class { .. } => 2,
-                _ => 1,
-            },
-            _ => 1,
-        };
-        self.dim
-            .clone()
-            .unwrap_or_default()
-            .iter()
-            .fold(acc, |acc, d| acc * d) as u16
+    pub fn get_size(&self) -> u16 {
+        self.dtype.as_ref().unwrap().get_size()
     }
 
     pub fn set_pointer(&mut self) -> &mut Self {
@@ -227,22 +221,9 @@ pub struct TypeTable {
 
 impl Default for TypeTable {
     fn default() -> Self {
-        let mut table = HashMap::new();
-        table.insert(
-            "int".to_owned(),
-            UserDefType::Struct {
-                name: "int".to_owned(),
-                sst: SymbolTable::default(),
-            },
-        );
-        table.insert(
-            "str".to_owned(),
-            UserDefType::Struct {
-                name: "str".to_owned(),
-                sst: SymbolTable::default(),
-            },
-        );
-        Self { table }
+        Self {
+            table: HashMap::new(),
+        }
     }
 }
 
@@ -271,7 +252,10 @@ impl TypeTable {
                 sst: SymbolTable::default(),
             },
         );
-        Ok(Type::UserDef(tname.to_owned()))
+        Ok(Type::UserDef {
+            name: tname.to_owned(),
+            size: 1,
+        })
     }
 
     pub fn set_cidx(&mut self, cname: &str, idx: u8) {
@@ -346,7 +330,10 @@ impl TypeTable {
             },
         );
 
-        Ok(Type::UserDef(cname.to_owned()))
+        Ok(Type::UserDef {
+            name: cname.to_owned(),
+            size: 2,
+        })
     }
 
     pub fn insert_cst(

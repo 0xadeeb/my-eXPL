@@ -66,11 +66,11 @@ TypeDefList -> Result<(), SemanticError>:
     ;
 
 TypeDef -> Result<(), SemanticError>:
-      Tname "{" FieldDeclList "}"      { p.borrow_mut().tt_mut().insert_struct($lexer, $span, $1?, $3?) }
+      Tname "{" FieldDeclList "}"      { p.borrow_mut().type_table.insert_struct($lexer, $span, $1?, $3?) }
     ;
 
 Tname -> Result<Type, SemanticError>:
-       Id                  { p.borrow_mut().tt_mut().new_struct($lexer, $1?.span()) }
+       Id                  { p.borrow_mut().type_table.new_struct($lexer, $1?.span()) }
     ;
 
 // CLASS DECLARATION GRAMMAR
@@ -81,8 +81,8 @@ ClassDefBlock -> Result<LinkedList<Vec<u8>>,  SemanticError>:
      ;
 
 ClassDefList -> Result<LinkedList<Vec<u8>>,  SemanticError>:
-       ClassDefList ClassDef       { Ok(class_list_join($2?, p.borrow_mut().tt_mut(), $1?)) }
-     | ClassDef                    { Ok(class_list_join($1?, p.borrow_mut().tt_mut(), LinkedList::new())) }
+       ClassDefList ClassDef       { Ok(class_list_join($2?, &mut p.borrow_mut().type_table, $1?)) }
+     | ClassDef                    { Ok(class_list_join($1?, &mut p.borrow_mut().type_table, LinkedList::new())) }
      ;
 
 ClassDef -> Result<(&'input str, Vec<u8>), SemanticError>:
@@ -94,10 +94,9 @@ Cname -> Result<&'input str, SemanticError>:
      | Id "EXTENDS" Id     { p.borrow_mut().set_class($lexer, $1?.span(), Some($3?.span())) }
      ;
 
-// FIXME: Label generator
 CDecl -> Result<Vec<u8>, SemanticError>:
-      "DECL" MethodDeclList "ENDDECL"                   { p.borrow_mut().insert_cst($span, $lexer, LinkedList::new(), $2?, &mut LabelGenerator::default()) }
-    | "DECL" FieldDeclList MethodDeclList "ENDDECL"     { p.borrow_mut().insert_cst($span, $lexer, $2?, $3?, &mut LabelGenerator::default()) }
+      "DECL" MethodDeclList "ENDDECL"                   { p.borrow_mut().insert_cst($span, $lexer, LinkedList::new(), $2?) }
+    | "DECL" FieldDeclList MethodDeclList "ENDDECL"     { p.borrow_mut().insert_cst($span, $lexer, $2?, $3?) }
     ;
 
 FieldDeclList -> Result<LinkedList<(Type, Span)>, SemanticError>:
@@ -120,15 +119,15 @@ MethodDecl -> Result<(Type, Span, LinkedList<(Type, Span)>),  SemanticError>:
 
 // TODO: Write helper functions
 MethodDefns -> Result<(),  SemanticError>:
-      MethodDefns FDef   { p.borrow_mut().fn_list().push_back($2?); Ok(()) }
-    | FDef               { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
+      MethodDefns FDef   { p.borrow_mut().fn_list.push_back($2?); Ok(()) }
+    | FDef               { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
     ;
 
 // GLOBAL DECLARATION GRAMMAR
-GDeclaration -> Result<u16, SemanticError>:
-      "DECL" GDeclList "ENDDECL"  { $2?; Ok(*p.borrow().gst().get_size()) }
-    | "DECL" "ENDDECL"            { Ok(0) }
-    | /* Empty */                 { Ok(0) }
+GDeclaration -> Result<(), SemanticError>:
+      "DECL" GDeclList "ENDDECL"  { $2 }
+    | "DECL" "ENDDECL"            { Ok(()) }
+    | /* Empty */                 { Ok(()) }
     ;
 
 GDeclList -> Result<(), SemanticError>:
@@ -137,7 +136,7 @@ GDeclList -> Result<(), SemanticError>:
     ;
 
 GDecl -> Result<(), SemanticError>:
-      Type GSymbolList ";"    { insert($2?, $1?, p.borrow_mut().gst_mut(), 4099, p.borrow().tt(), $lexer) }
+      Type GSymbolList ";"    { insert($2?, $1?, &mut p.borrow_mut().gst, 4099, $lexer) }
     ;
 
 GSymbolList -> Result<LinkedList<SymbolBuilder>, SemanticError>:
@@ -149,8 +148,8 @@ GSymbolDef -> Result<SymbolBuilder, SemanticError>:
       Id                               { let s = SymbolBuilder::new($1?.span(), true); Ok(s) }
     | Id SizeDef                       { let mut s = SymbolBuilder::new($1?.span(), true); s.dim($2?); Ok(s) }
     | "*" Id                           { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr(); Ok(s) }
-    | Id "(" ParamList ")"             { let mut s = SymbolBuilder::new($1?.span(), true); s.params($3?, &mut LabelGenerator::default(), $lexer); Ok(s) }
-    | "*" Id  "(" ParamList ")"        { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr().params($4?, &mut LabelGenerator::default(), $lexer); Ok(s) }
+    | Id "(" ParamList ")"             { let mut s = SymbolBuilder::new($1?.span(), true); s.params($3?, &mut p.borrow_mut().flabel, $lexer); Ok(s) }
+    | "*" Id  "(" ParamList ")"        { let mut s = SymbolBuilder::new($2?.span(), true); s.ptr().params($4?, &mut p.borrow_mut().flabel, $lexer); Ok(s) }
     ;
 
 SizeDef -> Result<Vec<u8>, SemanticError>:
@@ -165,7 +164,7 @@ Type -> Result<Type, SemanticError>:
       let span = $1?.span();
       Ok(
         p.borrow()
-         .tt()
+         .type_table
          .get($lexer.span_str(span))
          .ok_or(SemanticError::new(Some(span), "Type not defined"))?
          .to_type()
@@ -175,13 +174,13 @@ Type -> Result<Type, SemanticError>:
 
 // FUNCTION DEFINITION GRAMMAR
 Functions ->  Result<(), SemanticError>:
-      FDefBlock MainFn    { p.borrow_mut().fn_list().push_back($2?); Ok(()) }
-    | MainFn              { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
+      FDefBlock MainFn    { p.borrow_mut().fn_list.push_back($2?); Ok(()) }
+    | MainFn              { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
     ;
 
 FDefBlock -> Result<(), SemanticError>:
       FDefBlock FDef        { Ok(()) }
-    | FDef                  { p.borrow_mut().fn_list().push_back($1?); Ok(()) }
+    | FDef                  { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
     ;
 
 FDef -> Result<FnAst, SemanticError>:
@@ -190,7 +189,7 @@ FDef -> Result<FnAst, SemanticError>:
         create_fn(
           $1?, $8?, $9?,
           Span::new($span.start(), $5.unwrap().span().end()),
-          p.borrow().lst(), p.borrow().cfn().unwrap(),
+          & p.borrow().lst, p.borrow().cfn().unwrap(),
         )
       }
     ;
@@ -227,7 +226,7 @@ LDeclList -> Result<(), SemanticError>:
     ;
 
 LDecl -> Result<(), SemanticError>:
-      Type LSymbolList ";"    { insert($2?, $1?, p.borrow_mut().lst_mut(), 1, p.borrow().tt(), $lexer) }
+      Type LSymbolList ";"    { insert($2?, $1?, &mut p.borrow_mut().lst, 1, $lexer) }
     ;
 
 LSymbolList -> Result<LinkedList<SymbolBuilder>, SemanticError>:
@@ -241,7 +240,7 @@ LSymbolDef -> Result<SymbolBuilder, SemanticError>:
     ;
 
 Params -> Result<(), SemanticError>:
-      ParamList       { insert_args($lexer, $1?, $span, &mut *p.borrow_mut()) }
+      ParamList       { insert_args($lexer, $1?, $span, &mut p.borrow_mut()) }
     ;
 
 ParamList -> Result<LinkedList<(Type, Span)>, SemanticError>:
@@ -260,7 +259,7 @@ MainFn -> Result<FnAst, SemanticError>:
         create_main_block(
           $1?, $7?, $8?,
           Span::new($span.start(), $4.unwrap().span().end()),
-          p.borrow().lst(),
+          &p.borrow().lst,
         )
       }
     ;
@@ -295,7 +294,7 @@ Stmt -> Result<Tnode, SemanticError>:
     ;
 
 ReturnStmt -> Result<Tnode, SemanticError>:
-      "RETURN" E ";"    { create_return($span, $2?, &*p.borrow()) }
+      "RETURN" E ";"    { create_return($span, $2?, &p.borrow()) }
     ;
 
 // EXPRESSION GRAMMAR
@@ -334,14 +333,14 @@ Var -> Result<Tnode, SemanticError>:
     ;
 
 VarAccess ->  Result<Tnode, SemanticError>:
-      Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS, &*p.borrow()) }
-    | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS, &*p.borrow()) }
-    | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS, &*p.borrow()) }
-    | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS, &*p.borrow()) }
+      Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS, &p.borrow()) }
+    | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS, &p.borrow()) }
+    | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS, &p.borrow()) }
+    | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS, &p.borrow()) }
     ;
 
 FnCall -> Result<Tnode, SemanticError>:
-      Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span, p.borrow().gst()) }
+      Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span, & p.borrow().gst) }
     | Id ArrayAccess "." DotField "(" ArgList ")"     { Err(SemanticError::new(None, "nothing")) }
     | Inst "." DotField "(" ArgList ")"               { Err(SemanticError::new(None, "nothing")) }
     ;
@@ -356,9 +355,9 @@ DotField ->  Result<LinkedList<Span>, SemanticError>:
     | Id                      { Ok(LinkedList::from([$1?.span()])) }
     ;
 
-ArrayAccess -> Result<Vec<Box<Tnode>>, SemanticError>:
-      ArrayAccess "[" E "]"     { let mut $1 = $1?; $1.push(Box::new($3?)); Ok($1) }
-    | "[" E "]"                 { Ok(vec![Box::new($2?)]) }
+ArrayAccess -> Result<Vec<Tnode>, SemanticError>:
+      ArrayAccess "[" E "]"     { let mut $1 = $1?; $1.push($3?); Ok($1) }
+    | "[" E "]"                 { Ok(vec![$2?]) }
     ;
 
 Main -> Result<DefaultLexeme<u32>, SemanticError>:
@@ -397,7 +396,6 @@ use myexpl::{
     frontend::{parser_state::*, semantics::*},
     symbol::*,
     type_table::*,
-    utils::label::LabelGenerator,
 };
 use std::{cell::RefCell, collections::LinkedList};
 

@@ -53,7 +53,7 @@ pub enum Tnode {
     Var {
         span: Span,
         symbol: Symbol,
-        array_access: Vec<Box<Tnode>>,
+        array_access: Vec<Tnode>,
         field_access: Vec<u8>,
         ref_type: RefType,
         dtype: Type,
@@ -90,7 +90,7 @@ pub enum Tnode {
     FnCall {
         span: Span,
         symbol: Symbol,
-        args: LinkedList<Box<Tnode>>,
+        args: LinkedList<Tnode>,
     },
     Return {
         span: Span,
