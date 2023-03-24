@@ -1,0 +1,74 @@
+class
+A  // fact
+{
+    decl
+        int i;
+        int f0(int n);
+        int f1(int n);
+    enddecl
+    int f0(int n) {
+        decl
+            int c;
+        enddecl
+        begin
+            c = self.f1(n);
+            write(self.i);
+        end
+            return c;
+    }
+    int f1(int n) {
+        decl
+            int res;
+        enddecl
+        begin
+            if(n == 1) then
+                self.i=10;
+                res = 1;
+            else
+                res = n * self.f1(n - 1);
+            endif;
+        end
+            return res;
+    }
+}
+B extends A // fib
+{
+    decl
+        int f1(int n);
+    enddecl
+    int f1(int n) {
+        decl
+            int res;
+        enddecl
+        begin
+            if(n == 0 || n == 1) then
+                res = n;
+                self.i=20;
+            else
+                res = self.f1(n - 1) + self.f1(n - 2);
+            endif;
+        end
+            return res;
+    }
+}
+endclass
+
+int main() {
+    decl
+        int n, opt;
+        A obj;
+    enddecl
+    begin
+        initialize();
+        read(opt);
+        if(opt < 10) then
+            obj = new(A);  // fact
+        else
+            obj = new(B);  // fib
+        endif;
+        read(n);
+        write(obj.f0(n));
+    end
+        return 1;
+}
+

@@ -180,10 +180,7 @@ pub fn create_bool(
     left: Tnode,
     right: Tnode,
 ) -> Result<Tnode, SemanticError> {
-    if left.get_type() != right.get_type()
-        && left.get_type() != &Type::Null
-        && right.get_type() != &Type::Null
-    {
+    if left.get_type() != right.get_type() && right.get_type() != &Type::Null {
         return Err(SemanticError::new(
             Some(span),
             &format!(
@@ -266,7 +263,10 @@ pub fn create_asg(
     if lt != rt && rt != &Type::Null && !is_class {
         return Err(SemanticError::new(
             Some(span),
-            "LHS and RHS types of assignment statment don't match",
+            &format!(
+                "LHS type ({:?}) and RHS type ({:?}) of assignment statment don't match",
+                lt, rt
+            ),
         ));
     }
     left.set_ref(RefType::LHS)
@@ -451,7 +451,7 @@ pub fn create_fn(
     lst: &SymbolTable,
     cfn: &Symbol,
 ) -> Result<FnAst, SemanticError> {
-    if cfn.get_type() != &rtype {
+    if cfn.get_type() != &rtype && rtype != Type::Null {
         return Err(SemanticError::new(Some(span), "Return type don't match"));
     }
     Ok(FnAst::new(
@@ -585,7 +585,7 @@ pub fn create_method_call(
 
 pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> {
     match var {
-        Tnode::Var { ref dtype, .. } => match dtype {
+        Tnode::Var { ref dtype, .. } | Tnode::DeRefOperator { ref dtype, .. } => match dtype {
             Type::UserDef { size, .. } => {
                 if *size == 2 {
                     return Err(SemanticError::new(
@@ -623,7 +623,7 @@ pub fn create_new(
     tt: &TypeTable,
 ) -> Result<Tnode, SemanticError> {
     let c_idx = match var {
-        Tnode::Var { ref dtype, .. } => match dtype {
+        Tnode::Var { ref dtype, .. } | Tnode::DeRefOperator { ref dtype, .. } => match dtype {
             Type::UserDef { size, .. } => {
                 if *size == 1 {
                     return Err(SemanticError::new(
@@ -672,7 +672,7 @@ pub fn create_new(
 
 pub fn free_memory(span: Span, var: Tnode, is_delete: bool) -> Result<Tnode, SemanticError> {
     match &var {
-        Tnode::Var { dtype, .. } => match dtype {
+        Tnode::Var { dtype, .. } | Tnode::DeRefOperator { dtype, .. } => match dtype {
             Type::UserDef { size, .. } => {
                 if (is_delete && *size == 1) || (!is_delete && *size == 2) {
                     let error_message = if is_delete {

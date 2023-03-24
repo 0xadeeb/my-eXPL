@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet, LinkedList};
+use std::{
+    collections::{HashMap, HashSet, LinkedList},
+    fmt,
+};
 
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
@@ -105,7 +108,7 @@ impl UserDefType {
 }
 
 // This ds is used to store information about types
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
     Int,
@@ -115,6 +118,43 @@ pub enum Type {
     UserDef { name: String, size: u16 },
     Pointer(Box<Type>),
     Array { dtype: Box<Type>, dim: Vec<u8> },
+}
+
+impl fmt::Debug for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Void => write!(f, "Void"),
+            Type::Int => write!(f, "Int"),
+            Type::Bool => write!(f, "Bool"),
+            Type::Str => write!(f, "Str"),
+            Type::Null => write!(f, "Null"),
+            Type::UserDef { name, size } => {
+                let s: &str;
+                if size == &2 {
+                    s = "Class";
+                } else {
+                    s = "Struct";
+                }
+                write!(f, "{} {}", s, name)
+            }
+            Type::Pointer(dtype) => {
+                let mut s = String::new();
+                let mut p = dtype.as_ref();
+                while let Type::Pointer(inner) = p {
+                    s.push_str("*");
+                    p = inner.as_ref();
+                }
+                write!(f, "{}*{:?}", s, p)
+            }
+            Type::Array { dtype, dim } => {
+                write!(f, "{:?}[", dtype)?;
+                for d in dim {
+                    write!(f, "{}][", d)?;
+                }
+                write!(f, "]")
+            }
+        }
+    }
 }
 
 impl Type {

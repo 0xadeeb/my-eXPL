@@ -1,0 +1,50 @@
+class
+A
+{
+    decl
+        int f0(int n);
+        int f1(int n);
+    enddecl
+    int f0(int n) {
+        decl
+            int c;
+        enddecl
+        begin
+            c = n * self.f1(n - 1);
+        end
+            return c;
+    }
+    int f1(int n) {
+        decl
+            int c;
+        enddecl
+        begin
+            if(n == 1) then
+                c = 1;
+            else
+                c = n * self.f0(n - 1);
+            endif;
+        end
+            return c;
+    }
+}
+endclass
+int main() {
+    decl
+        int n, res;
+        A obj;
+    enddecl
+    begin
+        initialize();
+        read(n);
+        obj = new(A);
+        if(n % 2 == 0) then
+            res = obj.f0(n);
+        else
+            res = obj.f1(n);
+        endif;
+        write(res);
+    end
+        return 1;
+}
+

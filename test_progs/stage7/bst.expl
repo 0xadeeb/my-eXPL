@@ -123,8 +123,11 @@ int main(){
             read(val);
         endwhile;
         x = obj.setroot(Root);
+        write("InOrder");
         in = obj.inOrder_fun(obj.getroot());
+        write("PreOrder");
         in = obj.preOrder_fun(obj.getroot());
+        write("PostOrder");
         in = obj.postOrder_fun(obj.getroot());
     end
         return 0;

@@ -29,6 +29,7 @@ A
 B extends A
 {
     decl
+        B foo;
         int f1();
     enddecl
     int f1() {
