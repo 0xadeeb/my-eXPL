@@ -47,11 +47,13 @@ impl SymbolTable {
         Ok(())
     }
 
-    pub fn insert_symbol(&mut self, s: Symbol, check: bool) -> Result<(), String> {
+    pub fn insert_symbol(&mut self, s: Symbol, check: bool, is_arg: bool) -> Result<(), String> {
         if check && self.table.contains_key(s.get_name()) {
             return Err(format!("Multiple variables with same name defined"));
         }
-        self.size += s.get_size();
+        if !is_arg {
+            self.size += s.get_size();
+        }
         self.table.insert(s.get_name().to_string(), s);
         Ok(())
     }

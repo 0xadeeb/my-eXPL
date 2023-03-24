@@ -53,10 +53,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let obj_file = input_file.with_extension("obj");
     match res {
-        Some(Ok(_virt_fn_list)) => {
+        Some(Ok(())) => {
             let mut code_generator = CodeGen::new(&obj_file)?;
             let gst_size = p.borrow().gst.get_size().to_owned();
-            match code_generator.emit_code(&p.borrow().fn_list, gst_size) {
+            match code_generator.emit_code(&p.borrow().virt_fn_list, &p.borrow().fn_list, gst_size)
+            {
                 Ok(()) => {
                     let output_file = input_file.with_extension("xsm");
                     let input = get_input(&obj_file)?;

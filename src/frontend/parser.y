@@ -49,8 +49,8 @@
 
 %%
 // START
-Program -> Result<LinkedList<Vec<u8>>, SemanticError>:
-      TypeDefBlock ClassDefBlock GDeclaration Functions    { $1?; $3?; $4?; Ok($2?) }
+Program -> Result<(), SemanticError>:
+      TypeDefBlock ClassDefBlock GDeclaration Functions    { $1?; $2?; $3?; $4 }
     ;
 
 // TYPE DECLARATION GRAMMAR
@@ -74,19 +74,19 @@ Tname -> Result<Type, SemanticError>:
     ;
 
 // CLASS DECLARATION GRAMMAR
-ClassDefBlock -> Result<LinkedList<Vec<u8>>,  SemanticError>:
+ClassDefBlock -> Result<(),  SemanticError>:
        "CLASS" ClassDefList "ENDCLASS"   { $2 }
-     | "CLASS" "ENDCLASS"                { Ok(LinkedList::new()) }
-     | /* Empty */                       { Ok(LinkedList::new()) }
+     | "CLASS" "ENDCLASS"                { Ok(()) }
+     | /* Empty */                       { Ok(()) }
      ;
 
-ClassDefList -> Result<LinkedList<Vec<u8>>,  SemanticError>:
-       ClassDefList ClassDef       { Ok(class_list_join($2?, &mut p.borrow_mut().type_table, $1?)) }
-     | ClassDef                    { Ok(class_list_join($1?, &mut p.borrow_mut().type_table, LinkedList::new())) }
+ClassDefList -> Result<(),  SemanticError>:
+       ClassDefList ClassDef       { $1?; Ok(class_list_join($2?, &mut p.borrow_mut())) }
+     | ClassDef                    { Ok(class_list_join($1?, &mut p.borrow_mut())) }
      ;
 
 ClassDef -> Result<(&'input str, Vec<u8>), SemanticError>:
-       Cname "{" CDecl MethodDefns "}"     { $4?; p.borrow_mut().end_class(); Ok(($1?, $3?)) }
+       Cname "{" CDecl MethodDefns "}"     { let $1 = $1?; let $3 = $3?; $4?; p.borrow_mut().end_class(); Ok(($1, $3)) }
      ;
 
 Cname -> Result<&'input str, SemanticError>:
@@ -117,7 +117,6 @@ MethodDecl -> Result<(Type, Span, LinkedList<(Type, Span)>),  SemanticError>:
       Type Id "(" ParamList ")" ";"  { Ok(($1?, $2?.span(), $4?)) }
     ;
 
-// TODO: Write helper functions
 MethodDefns -> Result<(),  SemanticError>:
       MethodDefns FDef   { p.borrow_mut().fn_list.push_back($2?); Ok(()) }
     | FDef               { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
@@ -136,7 +135,10 @@ GDeclList -> Result<(), SemanticError>:
     ;
 
 GDecl -> Result<(), SemanticError>:
-      Type GSymbolList ";"    { insert($2?, $1?, &mut p.borrow_mut().gst, 4099, $lexer) }
+      Type GSymbolList ";"    {
+          let parser = &mut *p.borrow_mut();
+          insert($2?, $1?, &mut parser.gst, 4096 + 8 * parser.virt_fn_list.len() as i16, $lexer)
+      }
     ;
 
 GSymbolList -> Result<LinkedList<SymbolBuilder>, SemanticError>:
@@ -174,12 +176,12 @@ Type -> Result<Type, SemanticError>:
 
 // FUNCTION DEFINITION GRAMMAR
 Functions ->  Result<(), SemanticError>:
-      FDefBlock MainFn    { p.borrow_mut().fn_list.push_back($2?); Ok(()) }
+      FDefBlock MainFn    { p.borrow_mut().fn_list.push_back($2?); $1 }
     | MainFn              { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
     ;
 
 FDefBlock -> Result<(), SemanticError>:
-      FDefBlock FDef        { Ok(()) }
+      FDefBlock FDef        { p.borrow_mut().fn_list.push_back($2?); $1 }
     | FDef                  { p.borrow_mut().fn_list.push_back($1?); Ok(()) }
     ;
 
@@ -189,7 +191,7 @@ FDef -> Result<FnAst, SemanticError>:
         create_fn(
           $1?, $8?, $9?,
           Span::new($span.start(), $5.unwrap().span().end()),
-          & p.borrow().lst, p.borrow().cfn().unwrap(),
+          & p.borrow().lst, p.borrow().current_fn.as_ref().unwrap(),
         )
       }
     ;
@@ -246,6 +248,7 @@ Params -> Result<(), SemanticError>:
 ParamList -> Result<LinkedList<(Type, Span)>, SemanticError>:
       Param "," ParamList      { insert_front($3, $1) }
     | Param                    { Ok(LinkedList::from([$1?])) }
+    | /* Empty */              { Ok(LinkedList::new()) }
     ;
 
 Param -> Result<(Type, Span), SemanticError>:
@@ -285,12 +288,12 @@ Stmt -> Result<Tnode, SemanticError>:
     | "WRITE" "(" E ")" ";"                                   { create_write($span, $3?) }
     | "BREAK" ";"                                             { Ok(Tnode::Break) }
     | "CONTINUE" ";"                                          { Ok(Tnode::Continue) }
-    | Var "=" E ";"                                           { create_asg($span, $1?, $3?) }
+    | Var "=" E ";"                                           { create_asg($span, $1?, $3?, &p.borrow().type_table) }
     | "INIT" "(" ")" ";"                                      { Ok(Tnode::Initialize) }
     | Var "=" "ALLOC" "(" ")" ";"                             { create_alloc($span, $1?) }
-    | "FREE" "(" Var ")" ";"                                  { create_free($span, $3?) }
-    | Var "=" "NEW" "(" Id ")" ";"                            { Err(SemanticError::new(None, "nothing")) }
-    | "DELETE" "(" Var ")" ";"                                { Err(SemanticError::new(None, "nothing")) }
+    | "FREE" "(" Var ")" ";"                                  { free_memory($span, $3?, false) }
+    | Var "=" "NEW" "(" Id ")" ";"                            { create_new($lexer, $span, $1?, $5?.span(), &p.borrow().type_table) }
+    | "DELETE" "(" Var ")" ";"                                { free_memory($span, $3?, true) }
     ;
 
 ReturnStmt -> Result<Tnode, SemanticError>:
@@ -340,9 +343,9 @@ VarAccess ->  Result<Tnode, SemanticError>:
     ;
 
 FnCall -> Result<Tnode, SemanticError>:
-      Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span, & p.borrow().gst) }
-    | Id ArrayAccess "." DotField "(" ArgList ")"     { Err(SemanticError::new(None, "nothing")) }
-    | Inst "." DotField "(" ArgList ")"               { Err(SemanticError::new(None, "nothing")) }
+      Id "(" ArgList ")"                              { create_fncall($lexer.span_str($1?.span()), $3?, $span, &p.borrow().gst) }
+    | Id ArrayAccess "." DotField "(" ArgList ")"     { create_method_call($lexer, $1?.span(), check_access_vec($2?)?, $4?, $6?, $span, &p.borrow()) }
+    | Inst "." DotField "(" ArgList ")"               { create_method_call($lexer, $1?.span(), Vec::new(), $3?, $5?, $span, &p.borrow()) }
     ;
 
 Inst -> Result<DefaultLexeme<u32>, SemanticError>:
@@ -411,12 +414,11 @@ fn parse_int(
 
 fn class_list_join(
     arg: (&str, Vec<u8>),
-    tt: &mut TypeTable,
-    mut list: LinkedList<Vec<u8>>,
-) -> LinkedList<Vec<u8>> {
-    tt.set_cidx(arg.0, list.len() as u8);
+    parser: &mut ParserState,
+) {
+    let list = &mut parser.virt_fn_list;
+    parser.type_table.set_cidx(arg.0, list.len() as u8);
     list.push_back(arg.1);
-    list
 }
 
 fn insert_front<T>(

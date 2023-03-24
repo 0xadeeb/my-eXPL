@@ -56,6 +56,7 @@ pub fn get_variable(
                 SemanticError::new(Some(Span::new(token.span().start(), fspan.start())), &msg)
             })?
             .get(fname)
+            .filter(|s| !matches!(s, Symbol::Function { .. }))
             .ok_or(SemanticError::new(
                 Some(*fspan),
                 &format!("This field is not present in the type {:?}", tinstance),
@@ -99,6 +100,23 @@ pub fn insert_args(
     let mut j = params.iter();
     let mut counter = params.len() as i16 + 2;
 
+    match parser.cur_class {
+        Some(ref cinst) => parser
+            .lst
+            .insert_symbol(
+                Symbol::Variable {
+                    name: "self".to_owned(),
+                    binding: -1 * (counter + 2),
+                    dtype: cinst.clone(),
+                    is_static: false,
+                },
+                true,
+                true,
+            )
+            .map_err(|msg| SemanticError::new(Some(span), &msg))?,
+        None => {}
+    }
+
     loop {
         match (&i.next(), j.next()) {
             (Some((t1, n1)), Some((t2, n2))) if t1 == t2 && n1 == lexer.span_str(*n2) => {
@@ -111,6 +129,7 @@ pub fn insert_args(
                             dtype: t1.clone(),
                             is_static: false,
                         },
+                        true,
                         true,
                     )
                     .map_err(|msg| SemanticError::new(Some(span), &msg))?;
@@ -210,8 +229,41 @@ pub fn create_logical_op(
     })
 }
 
-pub fn create_asg(span: Span, mut left: Tnode, right: Tnode) -> Result<Tnode, SemanticError> {
-    if right.get_type() != left.get_type() && right.get_type() != &Type::Null {
+// Checks if class B is decendant class A
+fn is_descendent(tt: &TypeTable, a: &Type, b: &Type) -> bool {
+    match (a, b) {
+        (Type::UserDef { size: s1, .. }, Type::UserDef { size: s2, .. })
+            if *s1 == 2 && *s2 == 2 => {}
+        _ => return false,
+    }
+    let mut inst = b;
+    loop {
+        if a == inst {
+            return true;
+        }
+        inst = match tt
+            .get(inst.get_name().unwrap())
+            .unwrap()
+            .get_parent()
+            .unwrap()
+        {
+            Some(c) => c,
+            None => break,
+        };
+    }
+    false
+}
+
+pub fn create_asg(
+    span: Span,
+    mut left: Tnode,
+    right: Tnode,
+    tt: &TypeTable,
+) -> Result<Tnode, SemanticError> {
+    let lt = left.get_type();
+    let rt = right.get_type();
+    let is_class = is_descendent(tt, lt, rt);
+    if lt != rt && rt != &Type::Null && !is_class {
         return Err(SemanticError::new(
             Some(span),
             "LHS and RHS types of assignment statment don't match",
@@ -222,6 +274,7 @@ pub fn create_asg(span: Span, mut left: Tnode, right: Tnode) -> Result<Tnode, Se
     Ok(Tnode::Asgn {
         lhs: Box::new(left),
         rhs: Box::new(right),
+        is_class,
     })
 }
 
@@ -469,10 +522,78 @@ pub fn create_fncall(
     Ok(Tnode::FnCall { span, symbol, args })
 }
 
+pub fn create_method_call(
+    lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+    var: Span,
+    array_access: Vec<Tnode>,
+    mut fields: LinkedList<Span>,
+    args: LinkedList<Tnode>,
+    span: Span,
+    parser: &ParserState,
+) -> Result<Tnode, SemanticError> {
+    let vname = lexer.span_str(var);
+    let entry = parser
+        .get_var(vname)
+        .map_err(|msg| SemanticError::new(Some(var), &msg))?;
+
+    if entry.get_dim().unwrap() != array_access.len() as u8 {
+        return Err(SemanticError::new(
+            Some(span),
+            "Array access dimension does not match the declared dimension",
+        ));
+    }
+
+    let method_span = fields.pop_back().unwrap();
+    let tt = &parser.type_table;
+    let mut tinstance = entry.get_type();
+    let mut field_access = vec![];
+
+    for fspan in fields.iter() {
+        let fname = lexer.span_str(*fspan);
+        let symbol = tinstance
+            .symbol_list(tt)
+            .map_err(|msg| SemanticError::new(Some(Span::new(var.start(), fspan.start())), &msg))?
+            .get(fname)
+            .filter(|s| !matches!(s, Symbol::Function { .. }))
+            .ok_or(SemanticError::new(
+                Some(*fspan),
+                &format!("This field is not present in the type {:?}", tinstance),
+            ))?;
+        field_access.push(symbol.get_idx().unwrap());
+        tinstance = symbol.get_type();
+    }
+
+    let method = tinstance
+        .symbol_list(tt)
+        .map_err(|msg| SemanticError::new(Some(Span::new(var.start(), method_span.start())), &msg))?
+        .get(lexer.span_str(method_span))
+        .filter(|s| matches!(s, Symbol::Function { .. }))
+        .ok_or(SemanticError::new(
+            Some(method_span),
+            &format!("This method is not present in the type {:?}", tinstance),
+        ))?;
+
+    Ok(Tnode::MethodCall {
+        span,
+        var: entry,
+        array_access,
+        field_access,
+        args,
+        symbol: method.clone(),
+    })
+}
+
 pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> {
     match var {
         Tnode::Var { ref dtype, .. } => match dtype {
-            Type::UserDef { .. } => {}
+            Type::UserDef { size, .. } => {
+                if *size == 2 {
+                    return Err(SemanticError::new(
+                        Some(span),
+                        "Alloc is for struct type variables not class variables",
+                    ));
+                }
+            }
             _ => {
                 return Err(SemanticError::new(
                     Some(span),
@@ -494,10 +615,74 @@ pub fn create_alloc(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> 
     })
 }
 
-pub fn create_free(span: Span, var: Tnode) -> Result<Tnode, SemanticError> {
+pub fn create_new(
+    lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+    span: Span,
+    mut var: Tnode,
+    cspan: Span,
+    tt: &TypeTable,
+) -> Result<Tnode, SemanticError> {
+    let c_idx = match var {
+        Tnode::Var { ref dtype, .. } => match dtype {
+            Type::UserDef { size, .. } => {
+                if *size == 1 {
+                    return Err(SemanticError::new(
+                        Some(span),
+                        "New is for class variables not struct type variables",
+                    ));
+                }
+                let cinst = tt
+                    .get(lexer.span_str(cspan))
+                    .filter(|inst| matches!(inst, UserDefType::Class { .. }))
+                    .ok_or(SemanticError::new(Some(cspan), "This class was not found"))?;
+
+                if !is_descendent(tt, var.get_type(), &cinst.to_type()) {
+                    return Err(SemanticError::new(
+                        Some(span),
+                        &format!(
+                            "Type {:?} is not descendant of type of this varaible ({:?})",
+                            cinst.to_type(),
+                            var.get_type(),
+                        ),
+                    ));
+                }
+                cinst.get_idx().unwrap()
+            }
+            _ => {
+                return Err(SemanticError::new(
+                    Some(span),
+                    "Can't assign memory to stack variable",
+                ))
+            }
+        },
+        _ => {
+            return Err(SemanticError::new(
+                Some(span),
+                "Memory can be assigned to only variables",
+            ))
+        }
+    };
+    var.set_ref(RefType::LHS).unwrap();
+    Ok(Tnode::New {
+        span,
+        c_idx,
+        var: Box::new(var),
+    })
+}
+
+pub fn free_memory(span: Span, var: Tnode, is_delete: bool) -> Result<Tnode, SemanticError> {
     match &var {
         Tnode::Var { dtype, .. } => match dtype {
-            Type::UserDef { .. } => {}
+            Type::UserDef { size, .. } => {
+                if (is_delete && *size == 1) || (!is_delete && *size == 2) {
+                    let error_message = if is_delete {
+                        "Delete is just for variables of class type"
+                    } else {
+                        "Free is just for variables of struct type"
+                    };
+                    return Err(SemanticError::new(Some(span), error_message));
+                }
+            }
             _ => {
                 return Err(SemanticError::new(
                     Some(span),
@@ -512,8 +697,16 @@ pub fn create_free(span: Span, var: Tnode) -> Result<Tnode, SemanticError> {
             ))
         }
     }
-    Ok(Tnode::Free {
-        span,
-        var: Box::new(var),
-    })
+    let node = if is_delete {
+        Tnode::Delete {
+            span,
+            var: Box::new(var),
+        }
+    } else {
+        Tnode::Free {
+            span,
+            var: Box::new(var),
+        }
+    };
+    Ok(node)
 }

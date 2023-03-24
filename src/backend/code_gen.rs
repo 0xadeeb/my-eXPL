@@ -46,6 +46,75 @@ impl CodeGen {
         }
     }
 
+    fn sys_call(&mut self, args: &[&str]) -> Result<u8, Box<dyn Error>> {
+        let reg = self
+            .registers
+            .get_reg()
+            .ok_or(err_from_str("No registers left!"))?;
+        self.pre_call();
+        let ret = self
+            .registers
+            .get_reg()
+            .ok_or(err_from_str("No registers left!"))?;
+        for arg in args {
+            writeln!(self.fd, "MOV R{}, {}", reg, arg)?;
+            writeln!(self.fd, "PUSH R{}", reg)?;
+        }
+        writeln!(self.fd, "ADD SP, {}", 5 - args.len())?;
+        writeln!(self.fd, "CALL 0")?;
+        writeln!(self.fd, "POP R{}", ret)?;
+        writeln!(self.fd, "SUB SP, 4")?;
+        self.post_call();
+        self.registers.free_reg(reg);
+        Ok(ret)
+    }
+
+    fn gen_variable_code(
+        &mut self,
+        var: &Symbol,
+        array_access: &Vec<Tnode>,
+        field_access: &Vec<u8>,
+    ) -> Result<u8, Box<dyn Error>> {
+        let reg1 = self
+            .registers
+            .get_reg()
+            .ok_or(err_from_str("No registers left!"))?;
+        match var {
+            Symbol::Variable {
+                dtype,
+                binding,
+                is_static,
+                ..
+            } => match dtype {
+                Type::Array { dim, .. } => {
+                    writeln!(self.fd, "MOV R{}, {}", reg1, binding)?;
+                    for (i, exp) in array_access.iter().enumerate() {
+                        let reg2 = self.evaluate(exp)?.unwrap();
+                        for d in dim[(i + 1)..].iter() {
+                            writeln!(self.fd, "MUL R{}, {}", reg2, d)?;
+                        }
+                        writeln!(self.fd, "ADD R{}, R{}", reg1, reg2)?;
+                        self.registers.free_reg(reg2);
+                    }
+                }
+                _ => {
+                    writeln!(self.fd, "MOV R{}, {}", reg1, binding)?;
+                    if !is_static {
+                        writeln!(self.fd, "ADD R{}, BP", reg1)?;
+                    }
+                }
+            },
+            Symbol::Function { .. } => {
+                panic!("Symbol of function in var");
+            }
+        }
+        for idx in field_access.iter() {
+            writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
+            writeln!(self.fd, "ADD R{}, {}", reg1, idx)?;
+        }
+        Ok(reg1)
+    }
+
     fn evaluate(&mut self, node: &Tnode) -> Result<Option<u8>, Box<dyn Error>> {
         match node {
             Tnode::Constant { value, .. } => {
@@ -63,43 +132,7 @@ impl CodeGen {
                 ref_type,
                 ..
             } => {
-                let reg1 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
-                match symbol {
-                    Symbol::Variable {
-                        dtype,
-                        binding,
-                        is_static,
-                        ..
-                    } => match dtype {
-                        Type::Array { dim, .. } => {
-                            writeln!(self.fd, "MOV R{}, {}", reg1, binding)?;
-                            for (i, exp) in array_access.iter().enumerate() {
-                                let reg2 = self.evaluate(exp)?.unwrap();
-                                for d in dim[(i + 1)..].iter() {
-                                    writeln!(self.fd, "MUL R{}, {}", reg2, d)?;
-                                }
-                                writeln!(self.fd, "ADD R{}, R{}", reg1, reg2)?;
-                                self.registers.free_reg(reg2);
-                            }
-                        }
-                        _ => {
-                            writeln!(self.fd, "MOV R{}, {}", reg1, binding)?;
-                            if !is_static {
-                                writeln!(self.fd, "ADD R{}, BP", reg1)?;
-                            }
-                        }
-                    },
-                    Symbol::Function { .. } => {
-                        panic!("Symbol of function in var");
-                    }
-                }
-                for idx in field_access.iter() {
-                    writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
-                    writeln!(self.fd, "ADD R{}, {}", reg1, idx)?;
-                }
+                let reg1 = self.gen_variable_code(symbol, array_access, field_access)?;
                 if let RefType::RHS = ref_type {
                     writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
                 }
@@ -146,51 +179,33 @@ impl CodeGen {
             }
             Tnode::Read { var, .. } => {
                 let reg1 = self.evaluate(var)?.unwrap();
-                self.pre_call();
-                let reg2 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
-                writeln!(self.fd, "MOV R{}, \"Read\"", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "MOV R{}, -1", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "MOV R{}, R{}", reg2, reg1)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "ADD SP, 2")?;
-                writeln!(self.fd, "CALL 0")?;
-                writeln!(self.fd, "SUB SP, 5")?;
-                self.registers.free_reg(reg2);
-                self.post_call();
+                let ret = self.sys_call(&["\"Read\"", "-1", &format!("R{}", reg1)])?;
                 self.registers.free_reg(reg1);
+                self.registers.free_reg(ret);
                 Ok(None)
             }
             Tnode::Write { expression, .. } => {
                 let reg1 = self.evaluate(expression)?.unwrap();
-                self.pre_call();
-                let reg2 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
-
-                writeln!(self.fd, "MOV R{}, \"Write\"", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "MOV R{}, -2", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg1)?;
-                writeln!(self.fd, "ADD SP, 2")?;
-                writeln!(self.fd, "CALL 0")?;
-                writeln!(self.fd, "SUB SP, 5")?;
-
-                self.registers.free_reg(reg2);
-                self.post_call();
+                let ret = self.sys_call(&["\"Write\"", "-2", &format!("R{}", reg1)])?;
                 self.registers.free_reg(reg1);
+                self.registers.free_reg(ret);
                 Ok(None)
             }
-            Tnode::Asgn { lhs, rhs, .. } => {
+            Tnode::Asgn { lhs, rhs, is_class } => {
                 let reg1 = self.evaluate(lhs)?.unwrap();
-                let reg2 = self.evaluate(rhs)?.unwrap();
-                writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
+                let reg2;
+                if *is_class {
+                    let mut r = rhs.clone();
+                    r.set_ref(RefType::LHS).unwrap();
+                    reg2 = self.evaluate(&r)?.unwrap();
+                    writeln!(self.fd, "MOV [R{}], [R{}]", reg1, reg2)?;
+                    writeln!(self.fd, "INR R{}", reg1)?;
+                    writeln!(self.fd, "INR R{}", reg2)?;
+                    writeln!(self.fd, "MOV [R{}], [R{}]", reg1, reg2)?;
+                } else {
+                    reg2 = self.evaluate(rhs)?.unwrap();
+                    writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
+                }
                 self.registers.free_reg(reg2);
                 self.registers.free_reg(reg1);
                 Ok(None)
@@ -277,7 +292,7 @@ impl CodeGen {
                     let reg1 = self
                         .registers
                         .get_ret_reg()
-                        .ok_or(err_from_str("No self.registers left!"))?;
+                        .ok_or(err_from_str("No registers left!"))?;
                     writeln!(self.fd, "POP R{}", reg1)?;
                     writeln!(self.fd, "SUB SP, {}", args.len())?;
                     self.post_call();
@@ -290,7 +305,7 @@ impl CodeGen {
                 let reg2 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No self.registers left!"))?;
+                    .ok_or(err_from_str("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, BP", reg2)?;
                 writeln!(self.fd, "SUB R{}, 2", reg2)?;
                 writeln!(self.fd, "MOV [R{}], R{}", reg2, reg1)?;
@@ -299,38 +314,13 @@ impl CodeGen {
                 Ok(None)
             }
             Tnode::Initialize => {
-                self.pre_call();
-                let reg1 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No self.registers left!"))?;
-
-                writeln!(self.fd, "MOV R{}, \"Heapset\"", reg1)?;
-                writeln!(self.fd, "PUSH R{}", reg1)?;
-                writeln!(self.fd, "ADD SP, 4")?;
-                writeln!(self.fd, "CALL 0")?;
-                writeln!(self.fd, "SUB SP, 5")?;
-
-                self.registers.free_reg(reg1);
-                self.post_call();
+                let ret = self.sys_call(&["\"Heapset\""])?;
+                self.registers.free_reg(ret);
                 Ok(None)
             }
             Tnode::Alloc { var, .. } => {
                 let reg1 = self.evaluate(var)?.unwrap();
-                self.pre_call();
-                let reg2 = self
-                    .registers
-                    .get_ret_reg()
-                    .ok_or(err_from_str("No self.registers left!"))?;
-                writeln!(self.fd, "MOV R{}, \"Alloc\"", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "MOV R{}, 8", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "ADD SP, 3")?;
-                writeln!(self.fd, "CALL 0")?;
-                writeln!(self.fd, "POP R{}", reg2)?;
-                writeln!(self.fd, "SUB SP, 4")?;
-                self.post_call();
+                let reg2 = self.sys_call(&["\"Alloc\"", "8"])?; // TODO: Change 8 to real type size
                 writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
                 self.registers.free_reg(reg1);
                 self.registers.free_reg(reg2);
@@ -338,19 +328,7 @@ impl CodeGen {
             }
             Tnode::Free { var, .. } => {
                 let reg1 = self.evaluate(var)?.unwrap();
-                let reg2 = self
-                    .registers
-                    .get_reg()
-                    .ok_or(err_from_str("No self.registers left!"))?;
-
-                self.pre_call();
-                writeln!(self.fd, "MOV R{}, \"Free\"", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg2)?;
-                writeln!(self.fd, "PUSH R{}", reg1)?;
-                writeln!(self.fd, "ADD SP, 3")?;
-                writeln!(self.fd, "CALL 0")?;
-                writeln!(self.fd, "SUB SP, 5")?;
-                self.post_call();
+                let reg2 = self.sys_call(&["\"Free\"", &format!("R{}", reg1)])?;
                 self.registers.free_reg(reg1);
                 self.registers.free_reg(reg2);
                 Ok(None)
@@ -359,16 +337,97 @@ impl CodeGen {
                 let reg1 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No self.registers left!"))?;
+                    .ok_or(err_from_str("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, 0", reg1)?;
                 Ok(Some(reg1))
+            }
+            Tnode::New { c_idx, var, .. } => {
+                let reg1 = self.evaluate(var)?.unwrap();
+                let reg2 = self.sys_call(&["\"Alloc\"", "8"])?; // TODO: Change 8 to real type size
+                writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
+                writeln!(self.fd, "INR R{}", reg1)?;
+                writeln!(self.fd, "MOV [R{}], {}", reg1, 4096 + 8 * *c_idx as u16)?;
+                self.registers.free_reg(reg1);
+                self.registers.free_reg(reg2);
+                Ok(None)
+            }
+            Tnode::Delete { var, .. } => {
+                let reg1 = self.evaluate(var)?.unwrap();
+                let reg2 = self.sys_call(&["\"Free\"", &format!("R{}", reg1)])?;
+                writeln!(self.fd, "INR R{}", reg1)?;
+                writeln!(self.fd, "MOV [R{}], -1", reg1)?;
+                self.registers.free_reg(reg1);
+                self.registers.free_reg(reg2);
+                Ok(None)
+            }
+            Tnode::MethodCall {
+                var,
+                array_access,
+                field_access,
+                args,
+                symbol,
+                ..
+            } => {
+                let reg1 = self.gen_variable_code(var, array_access, field_access)?;
+                let idx = match symbol {
+                    Symbol::Function { idx: Some(id), .. } => id,
+                    _ => panic!("Method call error"),
+                };
+
+                self.pre_call();
+                let reg2 = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No registers left!"))?;
+                writeln!(self.fd, "MOV R{}, [R{}]", reg2, reg1)?;
+                writeln!(self.fd, "PUSH R{}", reg2)?; // Self member field
+                writeln!(self.fd, "INR R{}", reg1)?;
+                writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
+                writeln!(self.fd, "PUSH R{}", reg1)?; // Self virt fn table
+                self.registers.free_reg(reg2);
+
+                for exp in args.iter() {
+                    let reg2 = self.evaluate(exp)?.unwrap();
+                    writeln!(self.fd, "PUSH R{}", reg2)?;
+                    self.registers.free_reg(reg2);
+                }
+                writeln!(self.fd, "INR SP")?;
+                writeln!(self.fd, "ADD R{}, {}", reg1, idx)?;
+                writeln!(self.fd, "MOV R{}, [R{}]", reg1, reg1)?;
+                writeln!(self.fd, "CALL R{}", reg1)?;
+                let reg2 = self
+                    .registers
+                    .get_ret_reg()
+                    .ok_or(err_from_str("No registers left!"))?;
+                writeln!(self.fd, "POP R{}", reg2)?;
+                writeln!(self.fd, "SUB SP, {}", args.len() + 2)?;
+                self.post_call();
+                self.registers.free_reg(reg1);
+                Ok(Some(reg2))
             }
             Tnode::Empty => Ok(None),
         }
     }
 
+    fn gen_virt_fn_table(
+        &mut self,
+        virt_fn_list: &LinkedList<Vec<u8>>,
+    ) -> Result<u16, Box<dyn Error>> {
+        let mut adr: u16 = 4096;
+        for fns in virt_fn_list.iter() {
+            let mut counter = adr;
+            for fn_idx in fns.iter() {
+                writeln!(self.fd, "MOV [{}], <F{}>", counter, fn_idx)?;
+                counter += 1;
+            }
+            adr += 8;
+        }
+        Ok(adr)
+    }
+
     pub fn emit_code(
         &mut self,
+        virt_fn_list: &LinkedList<Vec<u8>>,
         fns: &LinkedList<FnAst>,
         gst_size: u16,
     ) -> Result<(), Box<dyn Error>> {
@@ -377,8 +436,8 @@ impl CodeGen {
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             0, 2056, 0, 0, 0, 0, 0, 0
         )?;
-        writeln!(self.fd, "MOV SP, {}", 4098 + gst_size)?;
-        writeln!(self.fd, "MOV BP, SP")?;
+        let base_adr = self.gen_virt_fn_table(virt_fn_list)?;
+        writeln!(self.fd, "MOV SP, {}", base_adr + gst_size)?; // 4095 + 8 * no of classes + gst size + 1 (ret val for main fn)
         writeln!(self.fd, "CALL <F0>")?;
         writeln!(self.fd, "MOV R0, 10")?;
         writeln!(self.fd, "PUSH R0")?;

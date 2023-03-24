@@ -61,6 +61,7 @@ pub enum Tnode {
     Asgn {
         lhs: Box<Tnode>,
         rhs: Box<Tnode>,
+        is_class: bool,
     },
     Read {
         span: Span,
@@ -92,6 +93,14 @@ pub enum Tnode {
         symbol: Symbol,
         args: LinkedList<Tnode>,
     },
+    MethodCall {
+        span: Span,
+        var: Symbol,
+        array_access: Vec<Tnode>,
+        field_access: Vec<u8>,
+        args: LinkedList<Tnode>,
+        symbol: Symbol,
+    },
     Return {
         span: Span,
         exp: Box<Tnode>,
@@ -100,7 +109,16 @@ pub enum Tnode {
         span: Span,
         var: Box<Tnode>,
     },
+    New {
+        span: Span,
+        c_idx: u8,
+        var: Box<Tnode>,
+    },
     Free {
+        span: Span,
+        var: Box<Tnode>,
+    },
+    Delete {
         span: Span,
         var: Box<Tnode>,
     },
@@ -124,7 +142,7 @@ impl Tnode {
     pub fn get_type(&self) -> &Type {
         match self {
             Tnode::Var { dtype, .. } => dtype,
-            Tnode::FnCall { symbol, .. } => symbol.get_type(),
+            Tnode::FnCall { symbol, .. } | Tnode::MethodCall { symbol, .. } => symbol.get_type(),
             Tnode::BinaryOperator { dtype, .. }
             | Tnode::Constant { dtype, .. }
             | Tnode::DeRefOperator { dtype, .. }

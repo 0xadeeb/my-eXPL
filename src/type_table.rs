@@ -19,7 +19,7 @@ pub enum UserDefType {
         name: String,
         cst: SymbolTable, // class symbol table
         idx: u8,
-        parent: Option<String>,
+        parent: Option<Type>,
         fn_list: Vec<u8>,
     },
 }
@@ -31,7 +31,14 @@ impl UserDefType {
         }
     }
 
-    pub fn get_parent(&self) -> Result<&Option<String>, ()> {
+    pub fn get_idx(&self) -> Result<u8, String> {
+        match self {
+            Self::Class { idx, .. } => Ok(*idx),
+            Self::Struct { .. } => Err("Struct doesn't have index".to_owned()),
+        }
+    }
+
+    pub fn get_parent(&self) -> Result<&Option<Type>, ()> {
         match self {
             Self::Class { parent, .. } => Ok(parent),
             Self::Struct { .. } => Err(()),
@@ -82,7 +89,7 @@ impl UserDefType {
     pub fn get_parent_st(&self, tt: &TypeTable) -> Result<SymbolTable, String> {
         match self {
             Self::Class { parent, .. } => match parent {
-                Some(p) => Ok(tt.get(p).unwrap().get_st().clone()),
+                Some(p) => Ok(tt.get(p.get_name().unwrap()).unwrap().get_st().clone()),
                 None => Ok(SymbolTable::default()),
             },
             _ => Err("No parent for structure".to_owned()),
@@ -271,16 +278,18 @@ impl TypeTable {
     ) -> Result<(), SemanticError> {
         let tname = dtype.get_name().unwrap();
         let sst = self.table.get_mut(tname).unwrap().get_st_mut();
-        for (i, (ftype, fname_span)) in field_list.iter().enumerate() {
+        for (ftype, fname_span) in field_list.iter() {
             let fname = lexer.span_str(*fname_span);
+            let binding = *sst.get_size() as i16;
             sst.insert_symbol(
                 Symbol::Variable {
                     name: fname.to_string(),
-                    binding: i as i16,
+                    binding,
                     dtype: ftype.clone(),
                     is_static: false,
                 },
                 true,
+                false,
             )
             .map_err(|msg| SemanticError::new(Some(*fname_span), &msg))?;
         }
@@ -323,7 +332,7 @@ impl TypeTable {
                 name: cname.to_owned(),
                 cst: parent.map(|p| p.get_st().clone()).unwrap_or_default(),
                 idx: 0,
-                parent: parent.map(|p| p.get_name().to_owned()),
+                parent: parent.map(|p| p.to_type()),
                 fn_list: parent
                     .map(|p| p.get_fns().unwrap().clone())
                     .unwrap_or_default(),
@@ -349,16 +358,18 @@ impl TypeTable {
         let mut cst = entry.get_st().clone();
         let mut fn_list = entry.get_fns().unwrap().clone();
 
-        for (i, (ftype, fname_span)) in field_list.iter().enumerate() {
+        for (ftype, fname_span) in field_list.iter() {
             let fname = lexer.span_str(*fname_span);
+            let binding = *cst.get_size() as i16;
             cst.insert_symbol(
                 Symbol::Variable {
                     name: fname.to_string(),
-                    binding: i as i16,
+                    binding,
                     dtype: ftype.clone(),
                     is_static: false,
                 },
                 true,
+                false,
             )
             .map_err(|msg| SemanticError::new(Some(*fname_span), &msg))?;
         }
@@ -374,32 +385,33 @@ impl TypeTable {
                     "This method is defined multiple times in this class",
                 ));
             }
-            let label = flabel.get();
-            match parent_st.get(name) {
+            let label = flabel.get() as u8;
+            let idx = match parent_st.get(name) {
                 Some(method) => {
                     let idx = method.get_idx().unwrap();
-                    fn_list[idx as usize] = label as u8;
+                    fn_list[idx as usize] = label;
+                    Some(idx)
                 }
                 None => {
-                    fn_list.push(label as u8);
-                    cst.insert_symbol(
-                        Symbol::Function {
-                            name: name.to_owned(),
-                            label: label as u8,
-                            idx: Some(fn_list.len() as u8 - 1),
-                            ret_type: rtype.clone(),
-                            params: param_list
-                                .iter()
-                                .map(|(dtype, pname)| {
-                                    (dtype.clone(), lexer.span_str(*pname).to_string())
-                                })
-                                .collect(),
-                        },
-                        false,
-                    )
-                    .map_err(|msg| SemanticError::new(Some(*name_span), &msg))?;
+                    fn_list.push(label);
+                    Some(fn_list.len() as u8 - 1)
                 }
-            }
+            };
+            cst.insert_symbol(
+                Symbol::Function {
+                    name: name.to_owned(),
+                    label,
+                    idx,
+                    ret_type: rtype.clone(),
+                    params: param_list
+                        .iter()
+                        .map(|(dtype, pname)| (dtype.clone(), lexer.span_str(*pname).to_string()))
+                        .collect(),
+                },
+                false,
+                false,
+            )
+            .map_err(|msg| SemanticError::new(Some(*name_span), &msg))?;
             method_set.insert(name.to_owned());
         }
 

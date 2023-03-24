@@ -21,6 +21,7 @@ pub struct ParserState {
     pub fn_list: LinkedList<FnAst>,
     pub current_fn: Option<Symbol>, // Current function that is being parser
     pub cur_class: Option<Type>,    // Current class that is being parser
+    pub virt_fn_list: LinkedList<Vec<u8>>, // Virtual function table
     pub flabel: LabelGenerator,     // Function label generator
 }
 
@@ -33,6 +34,7 @@ impl Default for ParserState {
             fn_list: LinkedList::new(),
             current_fn: None,
             cur_class: None,
+            virt_fn_list: LinkedList::new(),
             flabel: LabelGenerator::default(),
         }
     }
@@ -55,10 +57,6 @@ impl ParserState {
         }
     }
 
-    pub fn cfn(&self) -> Option<&Symbol> {
-        self.current_fn.as_ref()
-    }
-
     // When a new function is about to be parser (after an fname is parser)
     // the state of the parser is update to store the symbol of the
     // new function in the parser state DS
@@ -66,13 +64,23 @@ impl ParserState {
         self.lst = SymbolTable::default();
         self.current_fn = match fname {
             "" => None,
-            _ => Some(
-                self.gst
+            _ => match self.cur_class {
+                Some(ref c) => {
+                    let cst = self.type_table.get(c.get_name().unwrap()).unwrap().get_st();
+                    cst.get(fname)
+                        .filter(|s| matches!(s, Symbol::Function { .. }))
+                        .ok_or("Function was not defined")?
+                        .clone()
+                        .into()
+                }
+                None => self
+                    .gst
                     .get(fname)
                     .filter(|s| matches!(s, Symbol::Function { .. }))
                     .ok_or("Function was not defined")?
-                    .clone(),
-            ),
+                    .clone()
+                    .into(),
+            },
         };
         Ok(fname)
     }

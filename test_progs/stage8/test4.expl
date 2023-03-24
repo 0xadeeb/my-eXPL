@@ -1,0 +1,80 @@
+class
+Person{
+    decl
+        str name;
+        int age;
+        int printDetails();
+        str findName();
+        int createPerson(str name, int age);
+    enddecl
+    int printDetails(){
+    begin
+        write(self.name);
+        write(self.age);
+    end
+        return 1;
+    }
+    str findName(){
+        begin end
+        return self.name;
+    }
+    int createPerson(str name, int age){
+    begin
+        self.name=name;
+        self.age=age;
+    end
+        return 1;
+    }
+}
+Student extends Person{
+    decl
+        int rollnumber;
+        str dept;
+        int printDetails();
+        int createStudent(str name, int age,int rollNo, str dept);
+    enddecl
+    int createStudent(str name, int age,int rollNo, str dept){
+        begin
+            self.name =name;
+            self.age = age;
+            self.rollnumber = rollNo;
+            self.dept = dept;
+        end
+            return 1;
+    }
+    int printDetails(){
+        begin
+            write(self.name);
+            write(self.age);
+            write(self.rollnumber);
+            write(self.dept);
+        end
+            return 1;
+    }
+}
+endclass
+decl
+    int n,temp;
+    str name;
+    Person first;
+    Student second;
+    Person arbitrary;
+enddecl
+int main(){
+    begin
+        initialize();
+        first=new(Person);
+        temp = first.createPerson("Rogers", 37);
+        second=new(Student);
+        temp = second.createStudent("Mathew", 35, 999, "CS");
+        read(n);
+        if (n>10) then
+            arbitrary = first;
+        else
+            arbitrary = second;
+        endif;
+        n = arbitrary.printDetails();
+    end
+        return 0;
+}
+

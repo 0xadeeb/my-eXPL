@@ -1,6 +1,7 @@
 use lrlex::DefaultLexeme;
 use lrpar::{NonStreamingLexer, Span};
 
+#[derive(Debug, Clone)]
 pub struct SemanticError {
     span: Option<Span>,
     msg: String,
