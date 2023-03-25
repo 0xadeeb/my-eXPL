@@ -56,7 +56,7 @@ impl CodeGen {
             .registers
             .get_reg()
             .ok_or(err_from_str("No registers left!"))?;
-        for arg in args {
+        for arg in args.iter() {
             writeln!(self.fd, "MOV R{}, {}", reg, arg)?;
             writeln!(self.fd, "PUSH R{}", reg)?;
         }
@@ -404,6 +404,32 @@ impl CodeGen {
                 self.post_call();
                 self.registers.free_reg(reg1);
                 Ok(Some(reg2))
+            }
+            Tnode::SysCall { fn_code, args, .. } => {
+                let reg1 = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No registers left!"))?;
+                self.pre_call();
+                let reg2 = self.evaluate(fn_code)?.unwrap();
+                writeln!(self.fd, "PUSH R{}", reg2)?;
+                self.registers.free_reg(reg2);
+                for arg in args.iter() {
+                    let reg2 = self.evaluate(arg)?.unwrap();
+                    writeln!(self.fd, "PUSH R{}", reg2)?;
+                    self.registers.free_reg(reg2);
+                }
+                writeln!(self.fd, "ADD SP, {}", 4 - args.len())?;
+                writeln!(self.fd, "CALL 0")?;
+                let ret = self
+                    .registers
+                    .get_reg()
+                    .ok_or(err_from_str("No registers left!"))?;
+                writeln!(self.fd, "POP R{}", ret)?;
+                writeln!(self.fd, "SUB SP, 4")?;
+                self.post_call();
+                self.registers.free_reg(reg1);
+                Ok(Some(ret))
             }
             Tnode::Empty => Ok(None),
         }

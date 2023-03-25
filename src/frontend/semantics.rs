@@ -402,20 +402,27 @@ pub fn create_if(
 
 pub fn create_constant(
     lexer: &dyn NonStreamingLexer<DefaultLexeme, u32>,
+    span: Span,
     token: &DefaultLexeme,
     dtype: Type,
+    is_neg: bool,
 ) -> Result<Tnode, SemanticError> {
     match dtype {
         Type::Int => match lexer.span_str(token.span()).parse::<i32>() {
-            Ok(val) => Ok(Tnode::Constant {
-                span: token.span(),
-                dtype: Type::Int,
-                value: val.to_string(),
-            }),
+            Ok(mut val) => {
+                if is_neg {
+                    val *= -1;
+                }
+                Ok(Tnode::Constant {
+                    span,
+                    dtype: Type::Int,
+                    value: val.to_string(),
+                })
+            }
             Err(_) => Err(SemanticError::new(Some(token.span()), "Can't parse to i32")),
         },
         Type::Str => Ok(Tnode::Constant {
-            span: token.span(),
+            span,
             dtype: Type::Str,
             value: lexer.span_str(token.span()).to_string(),
         }),
@@ -709,4 +716,31 @@ pub fn free_memory(span: Span, var: Tnode, is_delete: bool) -> Result<Tnode, Sem
         }
     };
     Ok(node)
+}
+
+pub fn create_exposcall(
+    span: Span,
+    fn_code: Box<Tnode>,
+    mut args: Vec<Tnode>,
+) -> Result<Tnode, SemanticError> {
+    if fn_code.get_type() != &Type::Str {
+        return Err(SemanticError::new(
+            Some(span),
+            &format!(
+                "Function code of system call should have type string, found {:?}",
+                fn_code.get_type()
+            ),
+        ));
+    }
+    match fn_code.get_string() {
+        Some("\"Read\"") => args[1]
+            .set_ref(RefType::LHS)
+            .map_err(|msg| SemanticError::new(Some(span), &msg))?,
+        _ => {}
+    }
+    Ok(Tnode::SysCall {
+        span,
+        fn_code,
+        args,
+    })
 }

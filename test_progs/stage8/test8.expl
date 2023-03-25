@@ -71,12 +71,15 @@ int main() {
     enddecl
     begin
         initialize();
-        read(n);
+        //read(n);
+        opt = exposcall("Read", -1, n);
         obj = new(A);  // fact
-        write(obj.f0(n));
+        //write(obj.f0(n));
+        opt = exposcall("Write", -2, obj.f0(n));
         delete(obj);
         opt = foo(&obj);
-        write(obj.f0(n));
+        //write(obj.f0(n));
+        opt = exposcall("Write", -2, obj.f0(n));
     end
         return 1;
 }

@@ -71,6 +71,11 @@ pub enum Tnode {
         span: Span,
         expression: Box<Tnode>,
     },
+    SysCall {
+        span: Span,
+        fn_code: Box<Tnode>,
+        args: Vec<Tnode>,
+    },
     Connector {
         left: Box<Tnode>,
         right: Box<Tnode>,
@@ -139,6 +144,16 @@ impl Tnode {
         }
     }
 
+    pub fn get_string(&self) -> Option<&str> {
+        match self {
+            Tnode::Constant { dtype, value, .. } => match dtype {
+                Type::Str => Some(value),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn get_type(&self) -> &Type {
         match self {
             Tnode::Var { dtype, .. } => dtype,
@@ -147,6 +162,7 @@ impl Tnode {
             | Tnode::Constant { dtype, .. }
             | Tnode::DeRefOperator { dtype, .. }
             | Tnode::RefOperator { dtype, .. } => dtype,
+            Tnode::SysCall { .. } => &Type::Int,
             Tnode::Null => &Type::Null,
             _ => &Type::Void,
         }

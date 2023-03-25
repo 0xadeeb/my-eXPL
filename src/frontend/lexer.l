@@ -33,6 +33,7 @@ alloc            "ALLOC"
 free             "FREE"
 initialize       "INIT"
 null             "NULL"
+exposcall        "EXPOS"
 
 \+               "+"
 \-               "-"

@@ -35,6 +35,7 @@
 %epp EXTENDS    "extends"
 %epp NEW        "new"
 %epp DELETE     "delete"
+%epp EXPOS      "exposcall"
 %epp SELF       "self"
 %epp INT_T      "int"
 %epp STRING_T   "string"
@@ -300,6 +301,13 @@ ReturnStmt -> Result<Tnode, SemanticError>:
       "RETURN" E ";"    { create_return($span, $2?, &p.borrow()) }
     ;
 
+ExposCall ->  Result<Tnode, SemanticError>:
+      "EXPOS" "(" E ")"                        { create_exposcall($span, Box::new($3?), Vec::new()) }
+    | "EXPOS" "(" E "," E ")"                  { create_exposcall($span, Box::new($3?), Vec::from([$5?])) }
+    | "EXPOS" "(" E "," E "," E ")"            { create_exposcall($span, Box::new($3?), Vec::from([$5?, $7?])) }
+    | "EXPOS" "(" E "," E "," E "," E ")"      { create_exposcall($span, Box::new($3?), Vec::from([$5?, $7?, $9?])) }
+    ;
+
 // EXPRESSION GRAMMAR
 E -> Result<Tnode, SemanticError>:
       E "+" E                 { create_int(BinaryOpType::Add, $span, $1?, $3?) }
@@ -318,9 +326,11 @@ E -> Result<Tnode, SemanticError>:
     | "(" E ")"               { $2 }
     | Var                     { $1 }
     | "&" VarAccess           { create_ref($span, $2?) }
-    | Num                     { create_constant($lexer, &$1?, Type::Int) }
-    | String                  { create_constant($lexer, &$1?, Type::Str) }
+    | Num                     { create_constant($lexer, $span, &$1?, Type::Int, false) }
+    | "-" Num                 { create_constant($lexer, $span, &$2?, Type::Int, true) }
+    | String                  { create_constant($lexer, $span, &$1?, Type::Str, false) }
     | FnCall                  { $1 }
+    | ExposCall               { $1 }
     | "NULL"                  { Ok(Tnode::Null) }
     ;
 
