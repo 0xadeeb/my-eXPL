@@ -86,13 +86,14 @@ impl CodeGen {
                 is_static,
                 ..
             } => match dtype {
-                Type::Array { dim, .. } => {
+                Type::Array { dim, dtype } => {
                     writeln!(self.fd, "MOV R{}, {}", reg1, binding)?;
                     for (i, exp) in array_access.iter().enumerate() {
                         let reg2 = self.evaluate(exp)?.unwrap();
                         for d in dim[(i + 1)..].iter() {
                             writeln!(self.fd, "MUL R{}, {}", reg2, d)?;
                         }
+                        writeln!(self.fd, "MUL R{}, {}", reg2, dtype.get_size())?;
                         writeln!(self.fd, "ADD R{}, R{}", reg1, reg2)?;
                         self.registers.free_reg(reg2);
                     }
@@ -191,19 +192,15 @@ impl CodeGen {
                 self.registers.free_reg(ret);
                 Ok(None)
             }
-            Tnode::Asgn { lhs, rhs, is_class } => {
+            Tnode::Asgn { lhs, rhs, .. } => {
                 let reg1 = self.evaluate(lhs)?.unwrap();
-                let reg2;
-                if *is_class {
-                    let mut r = rhs.clone();
-                    r.set_ref(RefType::LHS).unwrap();
-                    reg2 = self.evaluate(&r)?.unwrap();
+                let reg2 = self.evaluate(rhs)?.unwrap();
+                if lhs.get_type().is_class() {
                     writeln!(self.fd, "MOV [R{}], [R{}]", reg1, reg2)?;
                     writeln!(self.fd, "INR R{}", reg1)?;
                     writeln!(self.fd, "INR R{}", reg2)?;
                     writeln!(self.fd, "MOV [R{}], [R{}]", reg1, reg2)?;
                 } else {
-                    reg2 = self.evaluate(rhs)?.unwrap();
                     writeln!(self.fd, "MOV [R{}], R{}", reg1, reg2)?;
                 }
                 self.registers.free_reg(reg2);

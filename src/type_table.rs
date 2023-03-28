@@ -147,11 +147,11 @@ impl fmt::Debug for Type {
                 write!(f, "{}*{:?}", s, p)
             }
             Type::Array { dtype, dim } => {
-                write!(f, "{:?}[", dtype)?;
+                write!(f, "{:?}", dtype)?;
                 for d in dim {
-                    write!(f, "{}][", d)?;
+                    write!(f, "[{}]", d)?;
                 }
-                write!(f, "]")
+                Ok(())
             }
         }
     }
@@ -170,6 +170,13 @@ impl Type {
 
     pub fn rref(&self) -> Result<Self, String> {
         Ok(Type::Pointer(Box::new(self.clone())))
+    }
+
+    pub fn inner_type(&self) -> &Self {
+        match self {
+            Self::Array { dtype, .. } => dtype,
+            _ => self,
+        }
     }
 
     pub fn get_name(&self) -> Result<&str, String> {
@@ -197,6 +204,13 @@ impl Type {
         }
     }
 
+    pub fn is_class(&self) -> bool {
+        match self {
+            Self::UserDef { size, .. } if *size == 2 => true,
+            _ => false,
+        }
+    }
+
     pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, String> {
         match self {
             Self::UserDef { name, .. } => Ok(tt.get(name).unwrap().get_st()),
@@ -221,10 +235,6 @@ impl TypeBuilder {
             dim: None,
             dtype: None,
         }
-    }
-
-    pub fn get_size(&self) -> u16 {
-        self.dtype.as_ref().unwrap().get_size()
     }
 
     pub fn set_pointer(&mut self) -> &mut Self {

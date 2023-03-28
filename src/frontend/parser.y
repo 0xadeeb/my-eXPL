@@ -346,10 +346,10 @@ Var -> Result<Tnode, SemanticError>:
     ;
 
 VarAccess ->  Result<Tnode, SemanticError>:
-      Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), RefType::RHS, &p.borrow()) }
-    | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), RefType::RHS, &p.borrow()) }
-    | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, RefType::RHS, &p.borrow()) }
-    | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, RefType::RHS, &p.borrow()) }
+      Id                                { get_variable($lexer, &$1?, Vec::new(), LinkedList::new(), &p.borrow()) }
+    | Id ArrayAccess                    { get_variable($lexer, &$1?, check_access_vec($2?)?, LinkedList::new(), &p.borrow()) }
+    | Inst "." DotField                 { get_variable($lexer, &$1?, Vec::new(), $3?, &p.borrow()) }
+    | Id ArrayAccess "." DotField       { get_variable($lexer, &$1?, check_access_vec($2?)?, $4?, &p.borrow()) }
     ;
 
 FnCall -> Result<Tnode, SemanticError>:

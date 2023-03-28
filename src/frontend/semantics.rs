@@ -30,7 +30,6 @@ pub fn get_variable(
     token: &DefaultLexeme,
     array_access: Vec<Tnode>,
     fields: LinkedList<Span>,
-    ref_type: RefType,
     parser: &ParserState,
 ) -> Result<Tnode, SemanticError> {
     let name = lexer.span_str(token.span());
@@ -46,7 +45,7 @@ pub fn get_variable(
         ));
     }
 
-    let mut tinstance = entry.get_type();
+    let mut tinstance = entry.get_type().inner_type();
     let mut field_access = vec![];
     for fspan in fields.iter() {
         let fname = lexer.span_str(*fspan);
@@ -70,7 +69,7 @@ pub fn get_variable(
         symbol: entry.clone(),
         array_access,
         field_access,
-        ref_type,
+        ref_type: RefType::RHS,
         dtype: tinstance.clone(),
     })
 }
@@ -96,36 +95,20 @@ pub fn insert_args(
     span: Span,
     parser: &mut ParserState,
 ) -> Result<(), SemanticError> {
-    let mut i = parser.cfn_params().into_iter();
-    let mut j = params.iter();
-    let mut counter = params.len() as i16 + 2;
-
-    match parser.cur_class {
-        Some(ref cinst) => parser
-            .lst
-            .insert_symbol(
-                Symbol::Variable {
-                    name: "self".to_owned(),
-                    binding: -1 * (counter + 2),
-                    dtype: cinst.clone(),
-                    is_static: false,
-                },
-                true,
-                true,
-            )
-            .map_err(|msg| SemanticError::new(Some(span), &msg))?,
-        None => {}
-    }
+    let mut i = parser.cfn_params().into_iter().rev();
+    let mut j = params.iter().rev();
+    let mut counter = -2;
 
     loop {
         match (&i.next(), j.next()) {
             (Some((t1, n1)), Some((t2, n2))) if t1 == t2 && n1 == lexer.span_str(*n2) => {
+                counter -= t1.get_size() as i16;
                 parser
                     .lst
                     .insert_symbol(
                         Symbol::Variable {
                             name: n1.to_string(),
-                            binding: -1 * counter,
+                            binding: counter,
                             dtype: t1.clone(),
                             is_static: false,
                         },
@@ -133,7 +116,6 @@ pub fn insert_args(
                         true,
                     )
                     .map_err(|msg| SemanticError::new(Some(span), &msg))?;
-                counter -= 1;
             }
             (None, None) => break,
             _ => {
@@ -144,6 +126,23 @@ pub fn insert_args(
             }
         }
     }
+
+    if let Some(ref cinst) = parser.cur_class {
+        parser
+            .lst
+            .insert_symbol(
+                Symbol::Variable {
+                    name: "self".to_owned(),
+                    binding: counter - 2,
+                    dtype: cinst.clone(),
+                    is_static: false,
+                },
+                true,
+                true,
+            )
+            .map_err(|msg| SemanticError::new(Some(span), &msg))?;
+    }
+
     Ok(())
 }
 
@@ -254,13 +253,13 @@ fn is_descendent(tt: &TypeTable, a: &Type, b: &Type) -> bool {
 pub fn create_asg(
     span: Span,
     mut left: Tnode,
-    right: Tnode,
+    mut right: Tnode,
     tt: &TypeTable,
 ) -> Result<Tnode, SemanticError> {
     let lt = left.get_type();
     let rt = right.get_type();
-    let is_class = is_descendent(tt, lt, rt);
-    if lt != rt && rt != &Type::Null && !is_class {
+    let is_desc = is_descendent(tt, lt, rt);
+    if lt != rt && rt != &Type::Null && !is_desc {
         return Err(SemanticError::new(
             Some(span),
             &format!(
@@ -271,10 +270,14 @@ pub fn create_asg(
     }
     left.set_ref(RefType::LHS)
         .map_err(|msg| SemanticError::new(left.get_span().cloned(), &msg))?;
+    if is_desc {
+        right
+            .set_ref(RefType::LHS)
+            .map_err(|msg| SemanticError::new(right.get_span().cloned(), &msg))?;
+    }
     Ok(Tnode::Asgn {
         lhs: Box::new(left),
         rhs: Box::new(right),
-        is_class,
     })
 }
 
@@ -322,6 +325,15 @@ pub fn create_deref(span: Span, exp: Tnode) -> Result<Tnode, SemanticError> {
 }
 
 pub fn create_read(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> {
+    if var.get_type() != &Type::Int && var.get_type() != &Type::Str {
+        return Err(SemanticError::new(
+            Some(span),
+            &format!(
+                "Type mismatch, can't read into variable of type {:?}",
+                var.get_type()
+            ),
+        ));
+    }
     var.set_ref(RefType::LHS)
         .map_err(|msg| SemanticError::new(var.get_span().cloned(), &msg))?;
     Ok(Tnode::Read {
@@ -333,10 +345,10 @@ pub fn create_read(span: Span, mut var: Tnode) -> Result<Tnode, SemanticError> {
 pub fn create_write(span: Span, e: Tnode) -> Result<Tnode, SemanticError> {
     match e.get_type() {
         Type::Int | Type::Str | Type::Pointer(..) => {}
-        _ => {
+        dt @ _ => {
             return Err(SemanticError::new(
                 e.get_span().cloned(),
-                "Type mismatch, expected integer or string",
+                &format!("Type mismatch, expected integer or string, found {:?}", dt),
             ))
         }
     }
@@ -349,10 +361,10 @@ pub fn create_write(span: Span, e: Tnode) -> Result<Tnode, SemanticError> {
 pub fn create_while(_span: Span, condition: Tnode, stmts: Tnode) -> Result<Tnode, SemanticError> {
     match condition.get_type() {
         Type::Bool => {}
-        _ => {
+        dt @ _ => {
             return Err(SemanticError::new(
                 condition.get_span().cloned(),
-                "Type mismatch, excepted boolen",
+                &format!("Type mismatch, excepted boolen, found {:?}", dt),
             ))
         }
     }
@@ -365,10 +377,10 @@ pub fn create_while(_span: Span, condition: Tnode, stmts: Tnode) -> Result<Tnode
 pub fn create_repeat(_span: Span, stmts: Tnode, condition: Tnode) -> Result<Tnode, SemanticError> {
     match condition.get_type() {
         Type::Bool => {}
-        _ => {
+        dt @ _ => {
             return Err(SemanticError::new(
                 condition.get_span().cloned(),
-                "Type mismatch, excepted boolen",
+                &format!("Type mismatch, excepted boolen, found {:?}", dt),
             ))
         }
     }
@@ -386,10 +398,10 @@ pub fn create_if(
 ) -> Result<Tnode, SemanticError> {
     match condition.get_type() {
         Type::Bool => {}
-        _ => {
+        dt @ _ => {
             return Err(SemanticError::new(
                 condition.get_span().cloned(),
-                "Type mismatch, excepted boolen",
+                &format!("Type mismatch, excepted boolen, found {:?}", dt),
             ))
         }
     }
@@ -552,7 +564,7 @@ pub fn create_method_call(
 
     let method_span = fields.pop_back().unwrap();
     let tt = &parser.type_table;
-    let mut tinstance = entry.get_type();
+    let mut tinstance = entry.get_type().inner_type();
     let mut field_access = vec![];
 
     for fspan in fields.iter() {
@@ -721,7 +733,7 @@ pub fn free_memory(span: Span, var: Tnode, is_delete: bool) -> Result<Tnode, Sem
 pub fn create_exposcall(
     span: Span,
     fn_code: Box<Tnode>,
-    mut args: Vec<Tnode>,
+    args: Vec<Tnode>,
 ) -> Result<Tnode, SemanticError> {
     if fn_code.get_type() != &Type::Str {
         return Err(SemanticError::new(
@@ -732,12 +744,7 @@ pub fn create_exposcall(
             ),
         ));
     }
-    match fn_code.get_string() {
-        Some("\"Read\"") => args[1]
-            .set_ref(RefType::LHS)
-            .map_err(|msg| SemanticError::new(Some(span), &msg))?,
-        _ => {}
-    }
+
     Ok(Tnode::SysCall {
         span,
         fn_code,

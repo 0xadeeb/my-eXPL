@@ -12,7 +12,7 @@ A  // fact
         enddecl
         begin
             c = self.f1(n);
-            write(self.i);
+            // write(self.i);
         end
             return c;
     }
@@ -21,7 +21,7 @@ A  // fact
             int res;
         enddecl
         begin
-            if(n == 1) then
+            if(n == 0 || n == 1) then
                 self.i=10;
                 res = 1;
             else
@@ -54,40 +54,30 @@ B extends A // fib
 endclass
 
 decl
-    int foo(A* obj);
-    int bar(A obj, int n);
+    A objs[8];
 enddecl
-
-int foo(A* obj) {
-    begin
-        *obj = new(B);  // fib
-    end
-    return 1;
-}
-
-int bar(A obj, int n) {
-    begin
-        write(obj.f0(n));
-    end
-    return 1;
-}
 
 int main() {
     decl
-        int n, opt;
-        A obj;
+        int n, temp, i;
     enddecl
     begin
         initialize();
-        //read(n);
-        opt = exposcall("Read", -1, &n);
-        obj = new(A);  // fact
-        write(obj.f0(n));
-        //opt = bar(obj, n);
-        delete(obj);
-        opt = foo(&obj);
-        //opt = bar(obj, n);
-        write(obj.f0(n));
+        // read(n);
+        i = 0;
+        while (i < 8) do
+            objs[i] = new(A);
+            objs[i + 1] = new(B);
+            i = i + 2;
+        endwhile;
+        i = 0;
+        while(i < 8) do
+            temp = objs[i].f0(i);
+            write(temp);
+            temp = objs[i + 1].f0(i);
+            write(temp);
+            i = i + 2;
+        endwhile;
     end
         return 1;
 }

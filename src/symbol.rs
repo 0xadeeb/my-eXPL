@@ -41,9 +41,10 @@ impl SymbolTable {
         }
         if !s.is_func() {
             s.binding(base + self.size as i16);
-            self.size += s.get_size();
         }
-        self.table.insert(name.to_string(), s.build(lexer).unwrap());
+        let symb = s.build(lexer).unwrap();
+        self.table.insert(name.to_string(), symb.clone());
+        self.size += symb.get_size();
         Ok(())
     }
 
@@ -174,10 +175,6 @@ impl SymbolBuilder {
 
     pub fn get_name(&self) -> Span {
         self.name
-    }
-
-    pub fn get_size(&self) -> u16 {
-        self.dtype.get_size()
     }
 
     pub fn is_func(&self) -> bool {

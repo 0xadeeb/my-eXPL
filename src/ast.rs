@@ -61,7 +61,6 @@ pub enum Tnode {
     Asgn {
         lhs: Box<Tnode>,
         rhs: Box<Tnode>,
-        is_class: bool,
     },
     Read {
         span: Span,
@@ -141,16 +140,6 @@ impl Tnode {
             _ => Err(Box::<dyn Error>::from(
                 "LHS of assign statment not variable",
             )),
-        }
-    }
-
-    pub fn get_string(&self) -> Option<&str> {
-        match self {
-            Tnode::Constant { dtype, value, .. } => match dtype {
-                Type::Str => Some(value),
-                _ => None,
-            },
-            _ => None,
         }
     }
 
