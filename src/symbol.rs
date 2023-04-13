@@ -5,19 +5,10 @@ use crate::{type_table::*, utils::label::LabelGenerator};
 use std::collections::{HashMap, LinkedList};
 
 // This DS should trivial
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SymbolTable {
     table: HashMap<String, Symbol>,
     size: u16,
-}
-
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self {
-            table: HashMap::new(),
-            size: 0,
-        }
-    }
 }
 
 impl SymbolTable {
@@ -166,7 +157,7 @@ impl SymbolBuilder {
             name,
             binding: None,
             is_static,
-            dtype: TypeBuilder::new(),
+            dtype: TypeBuilder::default(),
             idx: None,
             label: None,
             params: None,

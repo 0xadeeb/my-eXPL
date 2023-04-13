@@ -41,10 +41,10 @@ impl UserDefType {
         }
     }
 
-    pub fn get_parent(&self) -> Result<&Option<Type>, ()> {
+    pub fn get_parent(&self) -> Result<&Option<Type>, String> {
         match self {
             Self::Class { parent, .. } => Ok(parent),
-            Self::Struct { .. } => Err(()),
+            Self::Struct { .. } => Err("Variable of struct type won't have parent".to_owned()),
         }
     }
 
@@ -129,19 +129,14 @@ impl fmt::Debug for Type {
             Type::Str => write!(f, "Str"),
             Type::Null => write!(f, "Null"),
             Type::UserDef { name, size } => {
-                let s: &str;
-                if size == &2 {
-                    s = "Class";
-                } else {
-                    s = "Struct";
-                }
+                let s = if *size == 2 { "Class" } else { "Struct" };
                 write!(f, "{} {}", s, name)
             }
             Type::Pointer(dtype) => {
                 let mut s = String::new();
                 let mut p = dtype.as_ref();
                 while let Type::Pointer(inner) = p {
-                    s.push_str("*");
+                    s.push('*');
                     p = inner.as_ref();
                 }
                 write!(f, "{}*{:?}", s, p)
@@ -205,10 +200,7 @@ impl Type {
     }
 
     pub fn is_class(&self) -> bool {
-        match self {
-            Self::UserDef { size, .. } if *size == 2 => true,
-            _ => false,
-        }
+        matches!(self, Self::UserDef { size, .. } if *size == 2)
     }
 
     pub fn symbol_list<'t>(&self, tt: &'t TypeTable) -> Result<&'t SymbolTable, String> {
@@ -222,6 +214,8 @@ impl Type {
 // At times data about the whole type will only be parsered in mutpile rule
 // for example to parse a type ***int, it should recccursivly parser "*"s
 // and the type name "int", so I thought to use a type builder to build the type incrementally
+
+#[derive(Default, Debug, Clone)]
 pub struct TypeBuilder {
     pointer: u16,
     dim: Option<Vec<u8>>,
@@ -229,14 +223,6 @@ pub struct TypeBuilder {
 }
 
 impl TypeBuilder {
-    pub fn new() -> Self {
-        TypeBuilder {
-            pointer: 0,
-            dim: None,
-            dtype: None,
-        }
-    }
-
     pub fn set_pointer(&mut self) -> &mut Self {
         self.pointer += 1;
         self
@@ -272,16 +258,9 @@ impl TypeBuilder {
 }
 
 // This DS should trivial
+#[derive(Default)]
 pub struct TypeTable {
     table: HashMap<String, UserDefType>,
-}
-
-impl Default for TypeTable {
-    fn default() -> Self {
-        Self {
-            table: HashMap::new(),
-        }
-    }
 }
 
 impl TypeTable {
@@ -343,7 +322,7 @@ impl TypeTable {
             )
             .map_err(|msg| SemanticError::new(Some(*fname_span), &msg))?;
         }
-        if sst.get_size().to_owned() > 8 {
+        if *sst.get_size() > 8 {
             return Err(SemanticError::new(
                 Some(span),
                 "This type takes up more than 8 words",
@@ -465,7 +444,7 @@ impl TypeTable {
             method_set.insert(name.to_owned());
         }
 
-        if cst.get_size().to_owned() > 8 {
+        if *cst.get_size() > 8 {
             return Err(SemanticError::new(
                 Some(span),
                 "This type takes up more than 8 words",

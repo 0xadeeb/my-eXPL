@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let p = RefCell::new(ParserState::default());
     let (res, errs) = parser_y::parse(&lexer, &p);
 
-    if errs.is_empty() == false {
+    if !errs.is_empty() {
         for e in errs {
             println!("{}", e.pp(&lexer, &parser_y::token_epp));
         }

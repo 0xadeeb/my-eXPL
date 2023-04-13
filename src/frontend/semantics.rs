@@ -408,7 +408,7 @@ pub fn create_if(
     Ok(Tnode::If {
         condition: Box::new(condition),
         if_stmt: Box::new(if_stmts),
-        else_stmt: else_stmts.map(|val| Box::new(val)),
+        else_stmt: else_stmts.map(Box::new),
     })
 }
 
@@ -519,7 +519,7 @@ pub fn create_fncall(
         .ok_or(SemanticError::new(Some(span), "Function was not defined"))?
         .clone();
 
-    let mut i = symbol.get_params().unwrap().into_iter();
+    let mut i = symbol.get_params().unwrap().iter();
     let mut j = args.iter();
 
     loop {

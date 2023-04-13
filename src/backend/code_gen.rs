@@ -1,9 +1,7 @@
 use crate::ast::*;
 use crate::symbol::*;
 use crate::type_table::Type;
-use crate::utils::{
-    err_from_str, label::LabelGenerator, loop_util::LoopStack, register::RegisterPool,
-};
+use crate::utils::{label::LabelGenerator, loop_util::LoopStack, register::RegisterPool};
 use std::collections::LinkedList;
 use std::{
     error::Error,
@@ -50,12 +48,12 @@ impl CodeGen {
         let reg = self
             .registers
             .get_reg()
-            .ok_or(err_from_str("No registers left!"))?;
+            .ok_or(Box::<dyn Error>::from("No registers left!"))?;
         self.pre_call();
         let ret = self
             .registers
             .get_reg()
-            .ok_or(err_from_str("No registers left!"))?;
+            .ok_or(Box::<dyn Error>::from("No registers left!"))?;
         for arg in args.iter() {
             writeln!(self.fd, "MOV R{}, {}", reg, arg)?;
             writeln!(self.fd, "PUSH R{}", reg)?;
@@ -72,13 +70,13 @@ impl CodeGen {
     fn gen_variable_code(
         &mut self,
         var: &Symbol,
-        array_access: &Vec<Tnode>,
-        field_access: &Vec<u8>,
+        array_access: &[Tnode],
+        field_access: &[u8],
     ) -> Result<u8, Box<dyn Error>> {
         let reg1 = self
             .registers
             .get_reg()
-            .ok_or(err_from_str("No registers left!"))?;
+            .ok_or(Box::<dyn Error>::from("No registers left!"))?;
         match var {
             Symbol::Variable {
                 dtype,
@@ -122,7 +120,7 @@ impl CodeGen {
                 let reg1 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, {}", reg1, value)?;
                 Ok(Some(reg1))
             }
@@ -289,7 +287,7 @@ impl CodeGen {
                     let reg1 = self
                         .registers
                         .get_ret_reg()
-                        .ok_or(err_from_str("No registers left!"))?;
+                        .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                     writeln!(self.fd, "POP R{}", reg1)?;
                     writeln!(self.fd, "SUB SP, {}", args.len())?;
                     self.post_call();
@@ -302,7 +300,7 @@ impl CodeGen {
                 let reg2 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, BP", reg2)?;
                 writeln!(self.fd, "SUB R{}, 2", reg2)?;
                 writeln!(self.fd, "MOV [R{}], R{}", reg2, reg1)?;
@@ -334,7 +332,7 @@ impl CodeGen {
                 let reg1 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, 0", reg1)?;
                 Ok(Some(reg1))
             }
@@ -375,7 +373,7 @@ impl CodeGen {
                 let reg2 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "MOV R{}, [R{}]", reg2, reg1)?;
                 writeln!(self.fd, "PUSH R{}", reg2)?; // Self member field
                 writeln!(self.fd, "INR R{}", reg1)?;
@@ -395,7 +393,7 @@ impl CodeGen {
                 let reg2 = self
                     .registers
                     .get_ret_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "POP R{}", reg2)?;
                 writeln!(self.fd, "SUB SP, {}", args.len() + 2)?;
                 self.post_call();
@@ -406,7 +404,7 @@ impl CodeGen {
                 let reg1 = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 self.pre_call();
                 let reg2 = self.evaluate(fn_code)?.unwrap();
                 writeln!(self.fd, "PUSH R{}", reg2)?;
@@ -421,7 +419,7 @@ impl CodeGen {
                 let ret = self
                     .registers
                     .get_reg()
-                    .ok_or(err_from_str("No registers left!"))?;
+                    .ok_or(Box::<dyn Error>::from("No registers left!"))?;
                 writeln!(self.fd, "POP R{}", ret)?;
                 writeln!(self.fd, "SUB SP, 4")?;
                 self.post_call();
@@ -479,7 +477,7 @@ impl CodeGen {
                 }
                 Err(e) => {
                     eprint!("{e}");
-                    return Err(err_from_str("Error in code gen stage!"));
+                    return Err(Box::<dyn Error>::from("Error in code gen stage!"));
                 }
             }
         }

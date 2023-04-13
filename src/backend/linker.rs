@@ -26,6 +26,11 @@ pub fn translate_label(
                             if pass == 1 {
                                 let mut label = lexer.span_str(token.span()).to_string();
                                 label.pop();
+                                if map.contains_key(&label) {
+                                    return Err(Box::<dyn Error>::from(
+                                        "Function has multiple definitions",
+                                    ));
+                                }
                                 map.insert(label, 2056 + 2 * (line_number - 9));
                             }
                         }

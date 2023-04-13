@@ -1,12 +1,6 @@
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LoopStack {
     stack: Vec<(u16, u16)>,
-}
-
-impl Default for LoopStack {
-    fn default() -> Self {
-        Self { stack: Vec::new() }
-    }
 }
 
 impl LoopStack {

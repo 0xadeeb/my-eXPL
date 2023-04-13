@@ -1,0 +1,53 @@
+class
+A 
+{
+    decl
+        int f(int x, int y);
+        int g(int x, int y);
+    enddecl
+    int f(int x, int y) {
+        decl
+            int c;
+        enddecl
+        begin
+            if(y == 0) then
+                c = x;
+            else
+                c = self.f(self.g(x - 1, y - 1), y - 1);
+            endif;
+        end
+            return c;
+    }
+
+    int g(int x, int y) {
+        decl
+            int c;
+        enddecl
+        begin
+            if(y == 0) then
+                c = x;
+            else
+                c = self.g(self.f(x - 1, y - 1), y - 1);
+            endif;
+        end
+            return c;
+    }
+}
+endclass
+
+int main() {
+    decl
+        A obj;
+        int x, y, res;
+    enddecl
+    begin
+        initialize();
+        read(x);
+        read(y);
+        obj = new(A);
+        res = obj.f(x, y);
+        write(res);
+    end
+        return 1;
+}
+

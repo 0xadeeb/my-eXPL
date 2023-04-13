@@ -24,6 +24,19 @@ int BubbleSort(int first, int last)
     return 0;
 }
 
+int BubbleSort(int first, int last)
+{
+  decl
+    int temp;
+  enddecl
+
+  begin
+    write("HI");
+
+  end
+    return 0;
+}
+
 int main()
 {
   decl

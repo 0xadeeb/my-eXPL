@@ -82,8 +82,8 @@ ClassDefBlock -> Result<(),  SemanticError>:
      ;
 
 ClassDefList -> Result<(),  SemanticError>:
-       ClassDefList ClassDef       { $1?; Ok(class_list_join($2?, &mut p.borrow_mut())) }
-     | ClassDef                    { Ok(class_list_join($1?, &mut p.borrow_mut())) }
+       ClassDefList ClassDef       { $1?; class_list_join($2?, &mut p.borrow_mut()); Ok(()) }
+     | ClassDef                    { class_list_join($1?, &mut p.borrow_mut()); Ok(()) }
      ;
 
 ClassDef -> Result<(&'input str, Vec<u8>), SemanticError>:
@@ -205,15 +205,13 @@ FType -> Result<Type, SemanticError>:
 FName -> Result<&'input str, SemanticError>:
       Id           {
         let $1 = $1?;
-        Ok(
-          p.borrow_mut()
-            .update_state(
-              $lexer.span_str($1.span())
-            )
-            .map_err(
-              |msg| SemanticError::new(Some($1.span()), &msg)
-            )?
-        )
+        p.borrow_mut()
+          .update_state(
+            $lexer.span_str($1.span())
+          )
+          .map_err(
+            |msg| SemanticError::new(Some($1.span()), &msg)
+          )
       }
     ;
 
